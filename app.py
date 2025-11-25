@@ -33,25 +33,27 @@ def load_data():
             st.error("❌ Таблица пустая! Запусти скрипт в Google Sheets.")
             return None
 
-        # ПРОВЕРКА 2: Правильные ли заголовки?
-        required_columns = ['Lat', 'Long', 'Station Name', 'Price 95', 'Price Diesel']
+        # ИСПРАВЛЕНИЕ: Переименовываем РУССКИЕ заголовки (из твоего скриншота) в английские
+        # Это "словарь переводчика" для программы
+        df = df.rename(columns={
+            'Lat (Широта)': 'latitude', 
+            'Long (Долгота)': 'longitude',
+            'Название заправки': 'Name',
+            'Бензин 95': 'Gasolina 95',
+            'Дизель': 'Diesel',
+            'Адрес': 'Address',
+            'Рабочее время': 'Hours'
+        })
+        
+        # Проверка, что переименование сработало
+        required_columns = ['latitude', 'longitude', 'Name', 'Gasolina 95', 'Diesel']
         missing_cols = [c for c in required_columns if c not in df.columns]
         
         if missing_cols:
-            st.error(f"❌ В таблице не найдены колонки: {missing_cols}")
-            st.write("Найденные колонки:", df.columns.tolist())
-            st.write("Проверь заголовки в Google Sheets (первая строка).")
+            st.error(f"❌ Не найдены колонки после переименования: {missing_cols}")
+            st.write("Колонки в таблице:", df.columns.tolist())
             return None
-        
-        # Если всё ок, переименовываем
-        df = df.rename(columns={
-            'Lat': 'latitude', 
-            'Long': 'longitude',
-            'Station Name': 'Name',
-            'Price 95': 'Gasolina 95',
-            'Price Diesel': 'Diesel'
-        })
-        
+            
         # Чистим координаты
         df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
         df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
@@ -113,5 +115,3 @@ if df is not None:
             ### {row[fuel_type]:.3f} €
             ---
             """)
-    else:
-        st.warning("Нет заправок поблизости. Увеличь радиус поиска!")
