@@ -174,11 +174,20 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 
 def get_location_from_zip(zip_code):
     try:
-        geolocator = Nominatim(user_agent="walletsafe_app_v2")
-        # Строгий поиск
+        # Обновленный User Agent для надежности
+        geolocator = Nominatim(user_agent="walletsafe_explorer_tool")
+        zip_code = zip_code.strip()
+        
+        # Попытка 1: Строгий поиск по коду
         location = geolocator.geocode({"postalcode": zip_code, "country": "Spain"})
+        
+        # Попытка 2: Если не нашли, пробуем формат "28001, España"
         if not location:
-            location = geolocator.geocode(f"{zip_code}, Spain")
+            location = geolocator.geocode(f"{zip_code}, España")
+            
+        # Попытка 3: Формат "CP 28001, Spain"
+        if not location:
+            location = geolocator.geocode(f"CP {zip_code}, Spain")
         
         if location:
             return location.latitude, location.longitude
