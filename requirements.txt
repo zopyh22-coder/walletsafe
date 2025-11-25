@@ -1,0 +1,5 @@
+streamlit
+pandas
+numpy
+geopy
+streamlit-js-eval
