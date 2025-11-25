@@ -112,7 +112,6 @@ def load_data():
         df = pd.read_csv(SHEET_URL, dtype=str)
         if df.empty: return None
 
-        # Переименование колонок (Русский -> Английский)
         rename_map = {
             'Lat (Широта)': 'latitude', 
             'Long (Долгота)': 'longitude',
@@ -126,7 +125,6 @@ def load_data():
         cols_to_rename = {k: v for k, v in rename_map.items() if k in df.columns}
         df = df.rename(columns=cols_to_rename)
         
-        # Очистка данных
         for col in ['Gasolina 95', 'Diesel']:
             if col in df.columns:
                 df[col] = df[col].str.replace('€', '', regex=False)\
@@ -154,7 +152,6 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 
 def get_coords_from_zip(zip_code):
     try:
-        # pgeocode использует локальную базу данных - это быстро и надежно
         nomi = pgeocode.Nominatim('es') 
         location = nomi.query_postal_code(str(zip_code).strip())
         
@@ -167,17 +164,32 @@ def get_coords_from_zip(zip_code):
 # --- 4. ИНТЕРФЕЙС ---
 st.set_page_config(page_title="WalletSafe", page_icon="⛽", layout="wide")
 
+# СТИЛЬНЫЙ ФОН (Градиент + Современный вид)
 st.markdown("""
     <style>
-    .stApp { background-color: #0e1117; }
-    h1, h2, h3, p, div, span, label { color: #e0e0e0 !important; }
-    div[data-testid="stVerticalBlock"] > div {
-        background-color: #1f242d;
+    .stApp {
+        background: linear-gradient(to bottom right, #0f2027, #203a43, #2c5364);
+        color: white;
+    }
+    h1, h2, h3, p, label, span, div {
+        color: #f0f2f6 !important;
+    }
+    /* Карточки заправок */
+    div[data-testid="stVerticalBlock"] > div > div[data-testid="stVerticalBlock"] {
+        background-color: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         padding: 15px;
-        border-radius: 10px;
+        border-radius: 12px;
         margin-bottom: 10px;
     }
-    button { border-radius: 8px !important; }
+    /* Кнопки */
+    button {
+        border-radius: 8px !important;
+    }
+    /* Поля ввода */
+    input {
+        color: black !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -200,7 +212,7 @@ with st.sidebar:
 
     st.header(L["sidebar_header"])
     
-    # Только два режима поиска: Гео и Индекс
+    # Только два режима: Гео и Индекс
     mode = st.radio(L["search_mode_label"], [L["opt_geo"], L["opt_zip"]])
     
     if mode == L["opt_geo"]:
@@ -232,7 +244,7 @@ with st.sidebar:
     st.subheader(L["filter_header"])
     fuel_type = st.radio(L["fuel_label"], ["Gasolina 95", "Diesel"])
     
-    # Поле ввода для радиуса (0.1 до 100 км)
+    # Поле ввода для радиуса
     radius = st.number_input(
         L["radius_label"], 
         min_value=0.1, 
@@ -262,7 +274,6 @@ if df is not None:
         
         results = results.sort_values(by=fuel_type, ascending=True)
         
-        # Список заправок
         st.subheader(L["results_header"])
         st.caption(f"{L['found_count']} {len(results)}")
         
@@ -303,8 +314,6 @@ if df is not None:
                             </a>
                         """, unsafe_allow_html=True)
                     
-                    st.divider()
-
             st.map(results[['latitude', 'longitude']])
             
     else:
