@@ -8,7 +8,7 @@ from streamlit_js_eval import get_geolocation
 APP_TITLE = "WalletSafe"
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRLv_PUqHNCedwZhQIU5YtgH78T3uGxpd3v6CY2k368WP4gxDPFELdoplO5-ujpzSz53dJVkZ2dQbeZ/pub?gid=0&single=true&output=csv"
 
-# --- 2. СЛОВАРЬ ПЕРЕВОДОВ (ПОЛНЫЙ) ---
+# --- 2. СЛОВАРЬ ПЕРЕВОДОВ ---
 TRANSLATIONS = {
     "RU": {
         "page_title": "WalletSafe",
@@ -28,7 +28,8 @@ TRANSLATIONS = {
         "geo_prompt": "Нажмите кнопку или разрешите доступ в браузере.",
         "filter_header": "Фильтры",
         "fuel_label": "Вид топлива",
-        "radius_label": "Радиус поиска (км)",
+        "radius_label": "Радиус поиска (км):",
+        "radius_help": "Введите 0.5 для 500 метров",
         "results_header": "Результаты",
         "found_count": "Найдено заправок:",
         "best_price_label": "Лучшая цена:",
@@ -58,7 +59,8 @@ TRANSLATIONS = {
         "geo_prompt": "Click button or allow access in browser.",
         "filter_header": "Filters",
         "fuel_label": "Fuel Type",
-        "radius_label": "Search Radius (km)",
+        "radius_label": "Search Radius (km):",
+        "radius_help": "Enter 0.5 for 500 meters",
         "results_header": "Results",
         "found_count": "Stations found:",
         "best_price_label": "Best Price:",
@@ -88,7 +90,8 @@ TRANSLATIONS = {
         "geo_prompt": "Pulsa el botón o permite el acceso.",
         "filter_header": "Filtros",
         "fuel_label": "Tipo de combustible",
-        "radius_label": "Radio de búsqueda (km)",
+        "radius_label": "Radio de búsqueda (km):",
+        "radius_help": "Introduce 0.5 para 500 metros",
         "results_header": "Resultados",
         "found_count": "Gasolineras encontradas:",
         "best_price_label": "Mejor precio:",
@@ -102,16 +105,14 @@ TRANSLATIONS = {
     }
 }
 
-# --- 3. ЗАГРУЗКА И ОБРАБОТКА ДАННЫХ ---
+# --- 3. ФУНКЦИИ ---
 @st.cache_data(ttl=300, show_spinner=False)
 def load_data():
     try:
-        # Читаем всё как текст, чтобы не потерять ведущие нули или форматы
         df = pd.read_csv(SHEET_URL, dtype=str)
         if df.empty: return None
 
-        # Словарь для перевода заголовков из Гугл Таблицы
-        # Ключи - как в твоей таблице (Русский), Значения - внутренние имена (Английский)
+        # Переименование колонок (Русский -> Английский)
         rename_map = {
             'Lat (Широта)': 'latitude', 
             'Long (Долгота)': 'longitude',
@@ -122,11 +123,10 @@ def load_data():
             'Рабочее время': 'Hours'
         }
         
-        # Переименовываем только те колонки, которые существуют
         cols_to_rename = {k: v for k, v in rename_map.items() if k in df.columns}
         df = df.rename(columns=cols_to_rename)
         
-        # Очистка цен (убираем € и пробелы, меняем запятую на точку)
+        # Очистка данных
         for col in ['Gasolina 95', 'Diesel']:
             if col in df.columns:
                 df[col] = df[col].str.replace('€', '', regex=False)\
@@ -134,11 +134,9 @@ def load_data():
                                  .str.replace(',', '.', regex=False)
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-        # Очистка координат
         df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
         df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
         
-        # Убираем строки без координат
         df = df.dropna(subset=['latitude', 'longitude'])
         
         return df
@@ -146,7 +144,6 @@ def load_data():
         return None
 
 def calculate_distance(lat1, lon1, lat2, lon2):
-    # Формула Haversine для расчета дистанции по сфере
     R = 6371 
     lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
     dlat = lat2 - lat1
@@ -156,9 +153,9 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return R * c
 
 def get_coords_from_zip(zip_code):
-    # Используем оффлайн-базу pgeocode (самый надежный метод)
     try:
-        nomi = pgeocode.Nominatim('es') # es = Испания
+        # pgeocode использует локальную базу данных - это быстро и надежно
+        nomi = pgeocode.Nominatim('es') 
         location = nomi.query_postal_code(str(zip_code).strip())
         
         if not np.isnan(location.latitude) and not np.isnan(location.longitude):
@@ -170,72 +167,55 @@ def get_coords_from_zip(zip_code):
 # --- 4. ИНТЕРФЕЙС ---
 st.set_page_config(page_title="WalletSafe", page_icon="⛽", layout="wide")
 
-# Стиль фона (CSS) - Темный, чистый, не раздражающий
 st.markdown("""
     <style>
-    .stApp {
-        background-color: #0e1117;
-    }
-    /* Делаем текст читаемым */
-    h1, h2, h3, p, div, span {
-        color: #e0e0e0 !important;
-    }
-    /* Стиль для карточек */
+    .stApp { background-color: #0e1117; }
+    h1, h2, h3, p, div, span, label { color: #e0e0e0 !important; }
     div[data-testid="stVerticalBlock"] > div {
         background-color: #1f242d;
         padding: 15px;
         border-radius: 10px;
         margin-bottom: 10px;
     }
-    /* Кнопки */
-    button {
-        border-radius: 8px !important;
-    }
+    button { border-radius: 8px !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# Инициализация сессии для хранения языка и координат
 if 'lang' not in st.session_state: st.session_state.lang = "RU"
 if 'user_lat' not in st.session_state: st.session_state.user_lat = None
 if 'user_lon' not in st.session_state: st.session_state.user_lon = None
 
-# Сайдбар с настройками
 with st.sidebar:
-    # Выбор языка
     lang_choice = st.selectbox(
         "🌐 Language",
         ["🇷🇺 Русский", "🇪🇸 Español", "🇬🇧 English"],
         index=0 if st.session_state.lang == "RU" else (1 if st.session_state.lang == "ES" else 2)
     )
     
-    # Обновление языка
     if "Русский" in lang_choice: st.session_state.lang = "RU"
     elif "Español" in lang_choice: st.session_state.lang = "ES"
     else: st.session_state.lang = "EN"
     
-    L = TRANSLATIONS[st.session_state.lang] # Загружаем словарь
+    L = TRANSLATIONS[st.session_state.lang]
 
     st.header(L["sidebar_header"])
     
-    # Выбор режима поиска
+    # Только два режима поиска: Гео и Индекс
     mode = st.radio(L["search_mode_label"], [L["opt_geo"], L["opt_zip"]])
     
-    # ЛОГИКА ГЕОЛОКАЦИИ
     if mode == L["opt_geo"]:
         st.write(L["geo_prompt"])
-        loc = get_geolocation() # Автоматический запрос
+        loc = get_geolocation()
         
         if loc:
             st.session_state.user_lat = loc['coords']['latitude']
             st.session_state.user_lon = loc['coords']['longitude']
             st.success(L["geo_success"])
         else:
-            # Кнопка на случай если авто-запрос не сработал
             if st.button(L["geo_btn_label"]):
                 st.info("Check browser permissions.")
 
-    # ЛОГИКА ИНДЕКСА (Через базу данных pgeocode)
-    else:
+    else: # Поиск по Индексу
         with st.form("zip_form"):
             zip_code = st.text_input(L["zip_input_label"])
             submitted = st.form_submit_button(L["zip_btn"])
@@ -251,19 +231,25 @@ with st.sidebar:
     st.divider()
     st.subheader(L["filter_header"])
     fuel_type = st.radio(L["fuel_label"], ["Gasolina 95", "Diesel"])
-    radius = st.slider(L["radius_label"], 1, 150, 10) # До 150 км
+    
+    # Поле ввода для радиуса (0.1 до 100 км)
+    radius = st.number_input(
+        L["radius_label"], 
+        min_value=0.1, 
+        max_value=100.0, 
+        value=10.0, 
+        step=0.5,
+        help=L["radius_help"]
+    )
 
-# Заголовок страницы
 st.title(f"⛽ {L['page_title']}")
 st.write(L["sub_title"])
 
-# Загрузка данных
 df = load_data()
 
-# ОСНОВНАЯ ЧАСТЬ
 if df is not None:
     if st.session_state.user_lat and st.session_state.user_lon:
-        # Расчеты
+        # Расчет дистанции
         df['Distance_km'] = calculate_distance(
             st.session_state.user_lat, 
             st.session_state.user_lon, 
@@ -271,27 +257,23 @@ if df is not None:
             df['longitude'].values
         )
         
-        # Фильтрация по радиусу и наличию цены
         mask = (df['Distance_km'] <= radius) & (df[fuel_type] > 0)
         results = df[mask].copy()
         
-        # Сортировка: Сначала дешевые
         results = results.sort_values(by=fuel_type, ascending=True)
         
-        # ВЫВОД СПИСКА (СВЕРХУ)
+        # Список заправок
         st.subheader(L["results_header"])
         st.caption(f"{L['found_count']} {len(results)}")
         
         if len(results) == 0:
             st.warning(L["empty_warning"])
         else:
-            # Показываем топ-10
+            # Топ-10
             for _, row in results.head(10).iterrows():
                 price = row[fuel_type]
-                # Ссылка на карты
                 maps_link = f"https://www.google.com/maps/dir/?api=1&destination={row['latitude']},{row['longitude']}"
                 
-                # Оформление карточки
                 with st.container():
                     col1, col2, col3 = st.columns([3, 2, 2])
                     
@@ -306,7 +288,6 @@ if df is not None:
                     with col3:
                         dist = f"{row['Distance_km']:.1f} {L['km_away']}"
                         st.info(f"📏 {dist}")
-                        # Красная кнопка маршрута
                         st.markdown(f"""
                             <a href="{maps_link}" target="_blank" style="text-decoration: none;">
                                 <div style="
@@ -324,11 +305,9 @@ if df is not None:
                     
                     st.divider()
 
-            # ВЫВОД КАРТЫ (СНИЗУ)
             st.map(results[['latitude', 'longitude']])
             
     else:
-        # Если локация не выбрана
         st.info(L["start_info"])
 else:
     st.error(L["loading_error"])
