@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pgeocode
+from geopy.geocoders import Nominatim
 from streamlit_js_eval import get_geolocation
 
 # --- 1. НАСТРОЙКИ ПРИЛОЖЕНИЯ ---
@@ -18,10 +19,10 @@ TRANSLATIONS = {
         "search_mode_label": "Способ поиска",
         "opt_geo": "📍 Моя геолокация",
         "opt_zip": "📮 Почтовый индекс",
-        "zip_input_label": "Введите индекс (5 цифр):",
+        "zip_input_label": "Введите индекс (например, 28001):",
         "zip_btn": "🔍 Найти",
         "zip_success": "📍 Район найден:",
-        "zip_fail": "❌ Индекс не найден в базе Испании.",
+        "zip_fail": "❌ Индекс не найден. Попробуйте другой.",
         "geo_btn_label": "Получить координаты",
         "geo_success": "✅ Локация определена!",
         "geo_fail": "⚠️ Не удалось получить доступ к GPS.",
@@ -49,10 +50,10 @@ TRANSLATIONS = {
         "search_mode_label": "Search Mode",
         "opt_geo": "📍 My Location",
         "opt_zip": "📮 Postal Code",
-        "zip_input_label": "Enter Zip Code (5 digits):",
+        "zip_input_label": "Enter Zip Code (e.g. 28001):",
         "zip_btn": "🔍 Search",
         "zip_success": "📍 Area found:",
-        "zip_fail": "❌ Zip code not found in Spain database.",
+        "zip_fail": "❌ Zip code not found. Try another.",
         "geo_btn_label": "Get Coordinates",
         "geo_success": "✅ Location detected!",
         "geo_fail": "⚠️ Could not access GPS.",
@@ -80,10 +81,10 @@ TRANSLATIONS = {
         "search_mode_label": "Modo de búsqueda",
         "opt_geo": "📍 Mi ubicación",
         "opt_zip": "📮 Código Postal",
-        "zip_input_label": "Introduce CP (5 dígitos):",
+        "zip_input_label": "Introduce CP (ej. 28001):",
         "zip_btn": "🔍 Buscar",
         "zip_success": "📍 Zona encontrada:",
-        "zip_fail": "❌ Código postal no encontrado en España.",
+        "zip_fail": "❌ Código postal no encontrado.",
         "geo_btn_label": "Obtener coordenadas",
         "geo_success": "✅ Ubicación detectada!",
         "geo_fail": "⚠️ No se pudo acceder al GPS.",
@@ -151,44 +152,64 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return R * c
 
 def get_coords_from_zip(zip_code):
+    # ГИБРИДНЫЙ ПОИСК: База данных + Онлайн резерв
+    zip_clean = str(zip_code).strip()
+    
+    # 1. Пробуем pgeocode (Быстро, оффлайн)
     try:
         nomi = pgeocode.Nominatim('es') 
-        location = nomi.query_postal_code(str(zip_code).strip())
-        
+        location = nomi.query_postal_code(zip_clean)
         if not np.isnan(location.latitude) and not np.isnan(location.longitude):
             return location.latitude, location.longitude
-        return None
     except:
-        return None
+        pass
+
+    # 2. Если не нашли, пробуем Nominatim (Онлайн)
+    try:
+        geolocator = Nominatim(user_agent="walletsafe_final_v9")
+        location = geolocator.geocode(f"{zip_clean}, Spain")
+        if location:
+            return location.latitude, location.longitude
+    except:
+        pass
+        
+    return None
 
 # --- 4. ИНТЕРФЕЙС ---
 st.set_page_config(page_title="WalletSafe", page_icon="⛽", layout="wide")
 
-# СТИЛЬНЫЙ ФОН (Градиент + Современный вид)
+# ДИЗАЙН: Чистый, минималистичный Dark Mode
 st.markdown("""
     <style>
+    /* Основной фон */
     .stApp {
-        background: linear-gradient(to bottom right, #0f2027, #203a43, #2c5364);
-        color: white;
+        background-color: #121212;
+        color: #e0e0e0;
     }
-    h1, h2, h3, p, label, span, div {
-        color: #f0f2f6 !important;
+    /* Текст */
+    h1, h2, h3, p, label, span {
+        color: #ffffff !important;
     }
     /* Карточки заправок */
     div[data-testid="stVerticalBlock"] > div > div[data-testid="stVerticalBlock"] {
-        background-color: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 15px;
+        background-color: #1e1e1e;
+        border: 1px solid #333333;
+        padding: 20px;
         border-radius: 12px;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
     }
     /* Кнопки */
     button {
         border-radius: 8px !important;
+        background-color: #2b2b2b !important;
+        color: white !important;
+        border: 1px solid #444 !important;
     }
     /* Поля ввода */
     input {
-        color: black !important;
+        background-color: #2b2b2b !important;
+        color: white !important;
+        border: 1px solid #444 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -212,7 +233,7 @@ with st.sidebar:
 
     st.header(L["sidebar_header"])
     
-    # Только два режима: Гео и Индекс
+    # ДВА РЕЖИМА: ГЕО и ИНДЕКС
     mode = st.radio(L["search_mode_label"], [L["opt_geo"], L["opt_zip"]])
     
     if mode == L["opt_geo"]:
@@ -225,9 +246,9 @@ with st.sidebar:
             st.success(L["geo_success"])
         else:
             if st.button(L["geo_btn_label"]):
-                st.info("Check browser permissions.")
+                st.info("Check permissions")
 
-    else: # Поиск по Индексу
+    else: # Поиск по индексу
         with st.form("zip_form"):
             zip_code = st.text_input(L["zip_input_label"])
             submitted = st.form_submit_button(L["zip_btn"])
@@ -244,7 +265,7 @@ with st.sidebar:
     st.subheader(L["filter_header"])
     fuel_type = st.radio(L["fuel_label"], ["Gasolina 95", "Diesel"])
     
-    # Поле ввода для радиуса
+    # Радиус: Числовой ввод (для точности 0.5 км)
     radius = st.number_input(
         L["radius_label"], 
         min_value=0.1, 
@@ -261,7 +282,7 @@ df = load_data()
 
 if df is not None:
     if st.session_state.user_lat and st.session_state.user_lon:
-        # Расчет дистанции
+        # Расчет
         df['Distance_km'] = calculate_distance(
             st.session_state.user_lat, 
             st.session_state.user_lon, 
@@ -271,9 +292,9 @@ if df is not None:
         
         mask = (df['Distance_km'] <= radius) & (df[fuel_type] > 0)
         results = df[mask].copy()
-        
         results = results.sort_values(by=fuel_type, ascending=True)
         
+        # Список
         st.subheader(L["results_header"])
         st.caption(f"{L['found_count']} {len(results)}")
         
