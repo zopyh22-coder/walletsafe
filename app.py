@@ -84,15 +84,16 @@ df = load_data()
 if df is not None:
     # --- БОКОВАЯ ПАНЕЛЬ (ПОИСК) ---
     with st.sidebar:
-        st.header("📍 Где искать?")
+        st.header("⚙️ Панель управления")
         
-        # Выбор режима: Город или Индекс
-        search_mode = st.radio("Способ поиска:", ["Выбрать город", "Почтовый индекс"])
+        st.info("👇 **Шаг 1:** Выберите место поиска")
+        # Выбор режима
+        search_mode = st.radio("Как искать?", ["По городу", "По почтовому индексу (Zip)"])
         
         my_lat, my_lon = None, None
         
-        if search_mode == "Выбрать город":
-            selected_city = st.selectbox("Город:", list(CITIES.keys()))
+        if search_mode == "По городу":
+            selected_city = st.selectbox("Выберите город:", list(CITIES.keys()))
             my_lat = CITIES[selected_city]["lat"]
             my_lon = CITIES[selected_city]["lon"]
             
@@ -102,13 +103,15 @@ if df is not None:
                 coords = get_location_from_zip(zip_code)
                 if coords:
                     my_lat, my_lon = coords
-                    st.success(f"Найдено: {zip_code}")
+                    st.success(f"📍 Найдено: {zip_code}")
                 else:
-                    st.error("Индекс не найден. Попробуй другой.")
+                    st.error("❌ Индекс не найден. Попробуй другой.")
         
         st.divider()
-        fuel_type = st.radio("Топливо:", ["Gasolina 95", "Diesel"])
-        radius = st.slider("Радиус (км):", 1, 50, 10)
+        st.info("👇 **Шаг 2:** Настройте фильтры")
+        
+        fuel_type = st.radio("Что ищем?", ["Gasolina 95", "Diesel"])
+        radius = st.slider("Максимальное расстояние (км):", 1, 50, 10)
 
     # --- ГЛАВНАЯ ЧАСТЬ ---
     if my_lat and my_lon:
@@ -124,10 +127,11 @@ if df is not None:
         filtered_df = filtered_df.sort_values(by=fuel_type, ascending=True)
         
         # 1. СПИСОК (СВЕРХУ)
-        st.subheader(f"🏆 Лучшие цены ({len(filtered_df)} найдено)")
+        st.subheader(f"🏆 Топ заправок: {fuel_type}")
+        st.caption(f"Найдено {len(filtered_df)} заправок в радиусе {radius} км.")
         
         if len(filtered_df) == 0:
-            st.warning("В этом радиусе пусто. Увеличь радиус поиска!")
+            st.warning("😔 В этом радиусе пусто. Попробуйте увеличить расстояние в меню слева!")
         else:
             # Показываем топ-5 карточек КРУПНО
             for i, row in filtered_df.head(5).iterrows():
@@ -140,24 +144,40 @@ if df is not None:
                     c1, c2, c3 = st.columns([3, 2, 2])
                     
                     with c1:
-                        st.markdown(f"**{row['Name']}**")
-                        st.caption(f"{row['Address']}")
+                        st.markdown(f"### ⛽ {row['Name']}")
+                        st.markdown(f"**Адрес:** {row['Address']}")
+                        st.caption(f"⏰ Время работы: {row['Hours']}")
                     
                     with c2:
-                        st.metric("Цена", f"{price:.3f} €")
+                        st.metric("Цена за литр", f"{price:.3f} €")
                     
                     with c3:
-                        st.markdown(f"📏 **{row['Distance_km']:.1f} км**")
-                        # Кнопка навигации
-                        st.markdown(f"[📍 Маршрут]({maps_link})", unsafe_allow_html=True)
+                        st.markdown(f"📏 **{row['Distance_km']:.1f} км** от вас")
+                        # Кнопка навигации (выглядит как кнопка)
+                        st.markdown(f"""
+                            <a href="{maps_link}" target="_blank">
+                                <button style="
+                                    background-color: #FF4B4B; 
+                                    color: white; 
+                                    padding: 8px 16px; 
+                                    border: none; 
+                                    border-radius: 4px; 
+                                    cursor: pointer;
+                                    width: 100%;
+                                    font-weight: bold;">
+                                    📍 Маршрут
+                                </button>
+                            </a>
+                        """, unsafe_allow_html=True)
                     
                     st.divider()
 
             # 2. КАРТА (СНИЗУ)
-            st.subheader("🗺 Посмотреть на карте")
+            st.subheader("🗺 Карта расположения")
+            st.write("Нажмите на точки, чтобы увидеть детали.")
             st.map(filtered_df[['latitude', 'longitude']])
             
     else:
-        st.info("👈 Выбери город или введи индекс слева, чтобы начать.")
+        st.info("👈 Пожалуйста, выберите город или введите индекс в меню слева, чтобы начать поиск.")
 else:
-    st.error("Ошибка загрузки данных.")
+    st.error("Ошибка загрузки данных. Проверьте подключение к Google Таблице.")
