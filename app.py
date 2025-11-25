@@ -4,7 +4,7 @@ import numpy as np
 
 # --- 1. НАСТРОЙКИ ---
 APP_TITLE = "WalletSafe 🇪🇸"
-# ТВОЯ ССЫЛКА НА ГУГЛ ТАБЛИЦУ:
+# ССЫЛКА НА ТВОЮ ТАБЛИЦУ:
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRLv_PUqHNCedwZhQIU5YtgH78T3uGxpd3v6CY2k368WP4gxDPFELdoplO5-ujpzSz53dJVkZ2dQbeZ/pub?gid=0&single=true&output=csv"
 
 # --- 2. КООРДИНАТЫ ГОРОДОВ ---
@@ -22,12 +22,28 @@ CITIES = {
 }
 
 # --- 3. ФУНКЦИИ ---
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60) # Обновлять чаще для тестов
 def load_data():
     try:
+        # Читаем данные
         df = pd.read_csv(SHEET_URL)
         
-        # Переименовываем колонки
+        # ПРОВЕРКА 1: Пустая ли таблица?
+        if df.empty:
+            st.error("❌ Таблица пустая! Запусти скрипт в Google Sheets.")
+            return None
+
+        # ПРОВЕРКА 2: Правильные ли заголовки?
+        required_columns = ['Lat', 'Long', 'Station Name', 'Price 95', 'Price Diesel']
+        missing_cols = [c for c in required_columns if c not in df.columns]
+        
+        if missing_cols:
+            st.error(f"❌ В таблице не найдены колонки: {missing_cols}")
+            st.write("Найденные колонки:", df.columns.tolist())
+            st.write("Проверь заголовки в Google Sheets (первая строка).")
+            return None
+        
+        # Если всё ок, переименовываем
         df = df.rename(columns={
             'Lat': 'latitude', 
             'Long': 'longitude',
@@ -36,17 +52,17 @@ def load_data():
             'Price Diesel': 'Diesel'
         })
         
-        # Превращаем координаты в числа
+        # Чистим координаты
         df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
         df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
         df = df.dropna(subset=['latitude', 'longitude'])
         
         return df
     except Exception as e:
+        st.error(f"❌ Критическая ошибка: {e}")
         return None
 
 def calculate_distance(lat1, lon1, lat2, lon2):
-    # Формула расстояния
     R = 6371 
     dlat = np.radians(lat2 - lat1)
     dlon = np.radians(lon2 - lon1)
@@ -56,7 +72,6 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return R * c
 
 # --- 4. ИНТЕРФЕЙС ---
-# ИСПРАВЛЕНО: layout="wide" вместо mobile
 st.set_page_config(page_title=APP_TITLE, page_icon="⛽", layout="wide")
 
 st.title(f"⛽ {APP_TITLE}")
@@ -65,21 +80,17 @@ st.write("Самое дешевое топливо рядом с тобой.")
 df = load_data()
 
 if df is not None:
-    # --- БОКОВАЯ ПАНЕЛЬ ---
     with st.sidebar:
         st.header("Настройки поиска")
         selected_city = st.selectbox("Где ты сейчас?", list(CITIES.keys()))
         my_lat = CITIES[selected_city]["lat"]
         my_lon = CITIES[selected_city]["lon"]
-        
         st.divider()
         fuel_type = st.radio("Топливо:", ["Gasolina 95", "Diesel"])
         radius = st.slider("Радиус (км):", 1, 50, 10)
 
-    # --- РАСЧЕТЫ ---
     df['Distance_km'] = calculate_distance(my_lat, my_lon, df['latitude'], df['longitude'])
     
-    # Фильтр
     filtered_df = df[
         (df['Distance_km'] <= radius) & 
         (df[fuel_type] > 0)
@@ -87,18 +98,13 @@ if df is not None:
     
     filtered_df = filtered_df.sort_values(by=fuel_type, ascending=True)
 
-    # --- ВЫВОД ---
     col1, col2 = st.columns(2)
     col1.metric("Найдено заправок", len(filtered_df))
     
     if len(filtered_df) > 0:
         best_price = filtered_df.iloc[0][fuel_type]
         col2.metric("Лучшая цена", f"{best_price:.3f} €")
-        
-        # Карта
         st.map(filtered_df[['latitude', 'longitude']])
-        
-        # Список
         st.subheader("Топ заправок:")
         for i, row in filtered_df.head(10).iterrows():
             st.markdown(f"""
@@ -109,5 +115,3 @@ if df is not None:
             """)
     else:
         st.warning("Нет заправок поблизости. Увеличь радиус поиска!")
-else:
-    st.error("Ошибка загрузки данных. Проверь ссылку в коде.")
