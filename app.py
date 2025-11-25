@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import pgeocode # Новый инструмент для индексов
 from geopy.geocoders import Nominatim
 from streamlit_js_eval import get_geolocation
 
@@ -21,7 +22,7 @@ TRANSLATIONS = {
         "city_select": "Выберите город:",
         "zip_input": "Введите индекс (например, 28001):",
         "zip_search_btn": "🔍 Найти индекс",
-        "zip_error": "❌ Индекс не найден. Проверьте формат.",
+        "zip_error": "❌ Индекс не найден. Проверьте, что это испанский индекс (5 цифр).",
         "zip_found": "📍 Район найден: ",
         "geo_wait": "Разрешите доступ к геопозиции...",
         "geo_success": "✅ Геолокация получена!",
@@ -50,7 +51,7 @@ TRANSLATIONS = {
         "city_select": "Elige ciudad:",
         "zip_input": "Introduce CP (ej. 28001):",
         "zip_search_btn": "🔍 Buscar CP",
-        "zip_error": "❌ Código postal no encontrado.",
+        "zip_error": "❌ Código postal no encontrado (debe tener 5 dígitos).",
         "zip_found": "📍 Zona encontrada: ",
         "geo_wait": "Permita el acceso a la ubicación...",
         "geo_success": "✅ Ubicación detectada!",
@@ -79,7 +80,7 @@ TRANSLATIONS = {
         "city_select": "Select city:",
         "zip_input": "Enter Zip Code (e.g. 28001):",
         "zip_search_btn": "🔍 Search Zip",
-        "zip_error": "❌ Zip code not found.",
+        "zip_error": "❌ Zip code not found (must be 5 digits).",
         "zip_found": "📍 Area found: ",
         "geo_wait": "Allow location access...",
         "geo_success": "✅ Location detected!",
@@ -177,27 +178,18 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 
 def get_location_from_zip(zip_code):
     try:
-        # УНИКАЛЬНЫЙ User Agent для обхода блокировок
-        geolocator = Nominatim(user_agent="walletsafe_final_fix_unique_v5", timeout=10)
-        zip_code = str(zip_code).strip()
+        # Используем pgeocode (оффлайн база) вместо Nominatim (онлайн API)
+        # Это намного надежнее и не блокируется.
+        nomi = pgeocode.Nominatim('es') # 'es' = Испания
         
-        # Стратегия 1: Строгий поиск по Испании
-        location = geolocator.geocode({"postalcode": zip_code, "country": "Spain"}, country_codes="es")
+        # pgeocode требует строку, ищет по базе
+        location = nomi.query_postal_code(str(zip_code).strip())
         
-        # Стратегия 2: Если не нашли, пробуем формат "28001, Spain"
-        if not location:
-            location = geolocator.geocode(f"{zip_code}, Spain")
-            
-        # Стратегия 3: Поиск просто по коду внутри региона ES
-        if not location:
-             location = geolocator.geocode(f"{zip_code}", country_codes="es")
-
-        if location:
+        # Проверяем, нашли ли координаты (если нет, там будет NaN)
+        if not pd.isna(location.latitude) and not pd.isna(location.longitude):
             return location.latitude, location.longitude
         return None
     except Exception as e:
-        # В реальном приложении можно логировать ошибку
-        print(f"Geo error: {e}")
         return None
 
 # --- 3. ИНТЕРФЕЙС ---
@@ -251,7 +243,7 @@ if df is not None:
             st.session_state.user_lon = CITIES[selected_city]["lon"]
             
         else:
-            # Используем форму для почтового индекса, чтобы избежать спам-запросов при вводе
+            # Используем форму для почтового индекса
             with st.form(key='zip_form'):
                 zip_code_input = st.text_input(L["zip_input"])
                 submit_button = st.form_submit_button(label=L["zip_search_btn"])
