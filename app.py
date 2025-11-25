@@ -4,7 +4,6 @@ import numpy as np
 
 # --- 1. НАСТРОЙКИ ---
 APP_TITLE = "WalletSafe 🇪🇸"
-# ССЫЛКА НА ТВОЮ ТАБЛИЦУ:
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRLv_PUqHNCedwZhQIU5YtgH78T3uGxpd3v6CY2k368WP4gxDPFELdoplO5-ujpzSz53dJVkZ2dQbeZ/pub?gid=0&single=true&output=csv"
 
 # --- 2. КООРДИНАТЫ ГОРОДОВ ---
@@ -22,19 +21,16 @@ CITIES = {
 }
 
 # --- 3. ФУНКЦИИ ---
-@st.cache_data(ttl=60) # Обновлять чаще для тестов
+@st.cache_data(ttl=60)
 def load_data():
     try:
-        # Читаем данные
         df = pd.read_csv(SHEET_URL)
         
-        # ПРОВЕРКА 1: Пустая ли таблица?
         if df.empty:
             st.error("❌ Таблица пустая! Запусти скрипт в Google Sheets.")
             return None
 
-        # ИСПРАВЛЕНИЕ: Переименовываем РУССКИЕ заголовки (из твоего скриншота) в английские
-        # Это "словарь переводчика" для программы
+        # Переименовываем РУССКИЕ заголовки
         df = df.rename(columns={
             'Lat (Широта)': 'latitude', 
             'Long (Долгота)': 'longitude',
@@ -45,15 +41,14 @@ def load_data():
             'Рабочее время': 'Hours'
         })
         
-        # Проверка, что переименование сработало
-        required_columns = ['latitude', 'longitude', 'Name', 'Gasolina 95', 'Diesel']
-        missing_cols = [c for c in required_columns if c not in df.columns]
-        
-        if missing_cols:
-            st.error(f"❌ Не найдены колонки после переименования: {missing_cols}")
-            st.write("Колонки в таблице:", df.columns.tolist())
-            return None
-            
+        # --- ИСПРАВЛЕНИЕ ОШИБКИ ---
+        # Очищаем цены от значка "€" и превращаем в числа
+        for col in ['Gasolina 95', 'Diesel']:
+            # Убираем символ евро и пробелы
+            df[col] = df[col].astype(str).str.replace('€', '').str.replace(' ', '')
+            # Превращаем в числа (если ошибка, ставим 0)
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
         # Чистим координаты
         df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
         df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
@@ -61,7 +56,7 @@ def load_data():
         
         return df
     except Exception as e:
-        st.error(f"❌ Критическая ошибка: {e}")
+        st.error(f"❌ Ошибка в данных: {e}")
         return None
 
 def calculate_distance(lat1, lon1, lat2, lon2):
@@ -106,7 +101,9 @@ if df is not None:
     if len(filtered_df) > 0:
         best_price = filtered_df.iloc[0][fuel_type]
         col2.metric("Лучшая цена", f"{best_price:.3f} €")
+        
         st.map(filtered_df[['latitude', 'longitude']])
+        
         st.subheader("Топ заправок:")
         for i, row in filtered_df.head(10).iterrows():
             st.markdown(f"""
@@ -115,3 +112,5 @@ if df is not None:
             ### {row[fuel_type]:.3f} €
             ---
             """)
+    else:
+        st.warning("Нет заправок поблизости. Увеличь радиус поиска!")
