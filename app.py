@@ -177,25 +177,27 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 
 def get_location_from_zip(zip_code):
     try:
-        # Обновленный User Agent для надежности и таймаут
-        geolocator = Nominatim(user_agent="walletsafe_v3_secure_locator", timeout=10)
-        zip_code = zip_code.strip()
+        # УНИКАЛЬНЫЙ User Agent для обхода блокировок
+        geolocator = Nominatim(user_agent="walletsafe_final_fix_unique_v5", timeout=10)
+        zip_code = str(zip_code).strip()
         
-        # Попытка 1: Формат "28001 Spain" (Самый надежный для Nominatim)
-        location = geolocator.geocode(f"{zip_code} Spain")
+        # Стратегия 1: Строгий поиск по Испании
+        location = geolocator.geocode({"postalcode": zip_code, "country": "Spain"}, country_codes="es")
         
-        # Попытка 2: Строгий поиск по словарю
+        # Стратегия 2: Если не нашли, пробуем формат "28001, Spain"
         if not location:
-            location = geolocator.geocode({"postalcode": zip_code, "country": "Spain"})
+            location = geolocator.geocode(f"{zip_code}, Spain")
             
-        # Попытка 3: Поиск просто по номеру (иногда работает лучше)
+        # Стратегия 3: Поиск просто по коду внутри региона ES
         if not location:
-            location = geolocator.geocode(zip_code)
-        
+             location = geolocator.geocode(f"{zip_code}", country_codes="es")
+
         if location:
             return location.latitude, location.longitude
         return None
-    except:
+    except Exception as e:
+        # В реальном приложении можно логировать ошибку
+        print(f"Geo error: {e}")
         return None
 
 # --- 3. ИНТЕРФЕЙС ---
