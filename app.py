@@ -1,130 +1,117 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pgeocode # Новый инструмент для индексов
-from geopy.geocoders import Nominatim
+import pgeocode
 from streamlit_js_eval import get_geolocation
 
-# --- 1. НАСТРОЙКИ И ЯЗЫКИ ---
+# --- 1. НАСТРОЙКИ ПРИЛОЖЕНИЯ ---
 APP_TITLE = "WalletSafe"
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRLv_PUqHNCedwZhQIU5YtgH78T3uGxpd3v6CY2k368WP4gxDPFELdoplO5-ujpzSz53dJVkZ2dQbeZ/pub?gid=0&single=true&output=csv"
 
-# Словарь переводов
+# --- 2. СЛОВАРЬ ПЕРЕВОДОВ (ПОЛНЫЙ) ---
 TRANSLATIONS = {
     "RU": {
-        "title_sub": "Самое дешевое топливо рядом с тобой.",
-        "sidebar_title": "Настройки",
-        "lang_select": "Язык / Idioma / Language",
-        "search_mode": "Способ поиска",
-        "mode_geo": "📍 Моя геолокация",
-        "mode_city": "🏙 Выбрать город",
-        "mode_zip": "📮 Почтовый индекс",
-        "city_select": "Выберите город:",
-        "zip_input": "Введите индекс (например, 28001):",
-        "zip_search_btn": "🔍 Найти индекс",
-        "zip_error": "❌ Индекс не найден. Проверьте, что это испанский индекс (5 цифр).",
-        "zip_found": "📍 Район найден: ",
-        "geo_wait": "Разрешите доступ к геопозиции...",
-        "geo_success": "✅ Геолокация получена!",
-        "geo_error": "⚠️ Не удалось получить координаты. Проверьте настройки браузера.",
-        "filters": "Фильтры",
-        "fuel_type": "Топливо",
-        "radius": "Радиус поиска (км)",
-        "results_found": "Найдено заправок:",
-        "best_price": "Лучшая цена",
-        "empty_area": "😔 В этом радиусе пусто. Увеличьте радиус поиска!",
-        "top_list": "Топ заправок:",
-        "address": "Адрес:",
-        "hours": "Время работы:",
-        "btn_route": "📍 Маршрут",
-        "start_prompt": "👈 Выберите способ поиска слева.",
-        "loading_err": "Ошибка загрузки данных."
-    },
-    "ES": {
-        "title_sub": "El combustible más barato cerca de ti.",
-        "sidebar_title": "Configuración",
-        "lang_select": "Idioma",
-        "search_mode": "Modo de búsqueda",
-        "mode_geo": "📍 Mi ubicación",
-        "mode_city": "🏙 Elegir ciudad",
-        "mode_zip": "📮 Código Postal",
-        "city_select": "Elige ciudad:",
-        "zip_input": "Introduce CP (ej. 28001):",
-        "zip_search_btn": "🔍 Buscar CP",
-        "zip_error": "❌ Código postal no encontrado (debe tener 5 dígitos).",
-        "zip_found": "📍 Zona encontrada: ",
-        "geo_wait": "Permita el acceso a la ubicación...",
-        "geo_success": "✅ Ubicación detectada!",
-        "geo_error": "⚠️ No se pudo obtener la ubicación.",
-        "filters": "Filtros",
-        "fuel_type": "Combustible",
-        "radius": "Radio de búsqueda (km)",
-        "results_found": "Gasolineras encontradas:",
-        "best_price": "Mejor precio",
-        "empty_area": "😔 No hay gasolineras aquí. ¡Aumenta el radio!",
-        "top_list": "Mejores opciones:",
-        "address": "Dirección:",
-        "hours": "Horario:",
-        "btn_route": "📍 Ir",
-        "start_prompt": "👈 Elige un modo de búsqueda a la izquierda.",
-        "loading_err": "Error al cargar datos."
+        "page_title": "WalletSafe",
+        "sub_title": "Найди выгодное топливо рядом.",
+        "sidebar_header": "Настройки поиска",
+        "lang_label": "Язык / Language",
+        "search_mode_label": "Способ поиска",
+        "opt_geo": "📍 Моя геолокация",
+        "opt_zip": "📮 Почтовый индекс",
+        "zip_input_label": "Введите индекс (5 цифр):",
+        "zip_btn": "🔍 Найти",
+        "zip_success": "📍 Район найден:",
+        "zip_fail": "❌ Индекс не найден в базе Испании.",
+        "geo_btn_label": "Получить координаты",
+        "geo_success": "✅ Локация определена!",
+        "geo_fail": "⚠️ Не удалось получить доступ к GPS.",
+        "geo_prompt": "Нажмите кнопку или разрешите доступ в браузере.",
+        "filter_header": "Фильтры",
+        "fuel_label": "Вид топлива",
+        "radius_label": "Радиус поиска (км)",
+        "results_header": "Результаты",
+        "found_count": "Найдено заправок:",
+        "best_price_label": "Лучшая цена:",
+        "empty_warning": "😔 В этом радиусе нет заправок. Попробуйте увеличить радиус!",
+        "start_info": "👈 Выберите способ поиска в меню слева.",
+        "loading_error": "Ошибка загрузки данных.",
+        "card_address": "Адрес:",
+        "card_hours": "Режим работы:",
+        "card_btn": "📍 Маршрут",
+        "km_away": "км от вас"
     },
     "EN": {
-        "title_sub": "Cheapest fuel near you.",
-        "sidebar_title": "Settings",
-        "lang_select": "Language",
-        "search_mode": "Search Mode",
-        "mode_geo": "📍 My Location",
-        "mode_city": "🏙 Select City",
-        "mode_zip": "📮 Zip Code",
-        "city_select": "Select city:",
-        "zip_input": "Enter Zip Code (e.g. 28001):",
-        "zip_search_btn": "🔍 Search Zip",
-        "zip_error": "❌ Zip code not found (must be 5 digits).",
-        "zip_found": "📍 Area found: ",
-        "geo_wait": "Allow location access...",
+        "page_title": "WalletSafe",
+        "sub_title": "Find the best fuel prices nearby.",
+        "sidebar_header": "Search Settings",
+        "lang_label": "Language",
+        "search_mode_label": "Search Mode",
+        "opt_geo": "📍 My Location",
+        "opt_zip": "📮 Postal Code",
+        "zip_input_label": "Enter Zip Code (5 digits):",
+        "zip_btn": "🔍 Search",
+        "zip_success": "📍 Area found:",
+        "zip_fail": "❌ Zip code not found in Spain database.",
+        "geo_btn_label": "Get Coordinates",
         "geo_success": "✅ Location detected!",
-        "geo_error": "⚠️ Could not get location.",
-        "filters": "Filters",
-        "fuel_type": "Fuel Type",
-        "radius": "Search Radius (km)",
-        "results_found": "Stations found:",
-        "best_price": "Best Price",
-        "empty_area": "😔 No stations here. Increase the radius!",
-        "top_list": "Top Stations:",
-        "address": "Address:",
-        "hours": "Hours:",
-        "btn_route": "📍 Route",
-        "start_prompt": "👈 Select search mode on the left.",
-        "loading_err": "Error loading data."
+        "geo_fail": "⚠️ Could not access GPS.",
+        "geo_prompt": "Click button or allow access in browser.",
+        "filter_header": "Filters",
+        "fuel_label": "Fuel Type",
+        "radius_label": "Search Radius (km)",
+        "results_header": "Results",
+        "found_count": "Stations found:",
+        "best_price_label": "Best Price:",
+        "empty_warning": "😔 No stations in this radius. Try increasing it!",
+        "start_info": "👈 Select a search mode on the left.",
+        "loading_error": "Error loading data.",
+        "card_address": "Address:",
+        "card_hours": "Hours:",
+        "card_btn": "📍 Route",
+        "km_away": "km away"
+    },
+    "ES": {
+        "page_title": "WalletSafe",
+        "sub_title": "Encuentra el mejor precio cerca de ti.",
+        "sidebar_header": "Configuración",
+        "lang_label": "Idioma",
+        "search_mode_label": "Modo de búsqueda",
+        "opt_geo": "📍 Mi ubicación",
+        "opt_zip": "📮 Código Postal",
+        "zip_input_label": "Introduce CP (5 dígitos):",
+        "zip_btn": "🔍 Buscar",
+        "zip_success": "📍 Zona encontrada:",
+        "zip_fail": "❌ Código postal no encontrado en España.",
+        "geo_btn_label": "Obtener coordenadas",
+        "geo_success": "✅ Ubicación detectada!",
+        "geo_fail": "⚠️ No se pudo acceder al GPS.",
+        "geo_prompt": "Pulsa el botón o permite el acceso.",
+        "filter_header": "Filtros",
+        "fuel_label": "Tipo de combustible",
+        "radius_label": "Radio de búsqueda (km)",
+        "results_header": "Resultados",
+        "found_count": "Gasolineras encontradas:",
+        "best_price_label": "Mejor precio:",
+        "empty_warning": "😔 No hay gasolineras en este radio. ¡Auméntalo!",
+        "start_info": "👈 Selecciona un modo de búsqueda a la izquierda.",
+        "loading_error": "Error al cargar datos.",
+        "card_address": "Dirección:",
+        "card_hours": "Horario:",
+        "card_btn": "📍 Ruta",
+        "km_away": "km de ti"
     }
 }
 
-CITIES = {
-    "Madrid": {"lat": 40.4168, "lon": -3.7038},
-    "Barcelona": {"lat": 41.3851, "lon": 2.1734},
-    "Valencia": {"lat": 39.4699, "lon": -0.3763},
-    "Sevilla": {"lat": 37.3891, "lon": -5.9845},
-    "Zaragoza": {"lat": 41.6488, "lon": -0.8891},
-    "Málaga": {"lat": 36.7213, "lon": -4.4214},
-    "Murcia": {"lat": 37.9922, "lon": -1.1307},
-    "Palma": {"lat": 39.5696, "lon": 2.6502},
-    "Bilbao": {"lat": 43.2630, "lon": -2.9350},
-    "Alicante": {"lat": 38.3452, "lon": -0.4810}
-}
-
-# --- 2. ФУНКЦИИ ---
-@st.cache_data(ttl=60, show_spinner=True)
+# --- 3. ЗАГРУЗКА И ОБРАБОТКА ДАННЫХ ---
+@st.cache_data(ttl=300, show_spinner=False)
 def load_data():
     try:
-        # 1. Читаем все как строки (dtype=str), чтобы избежать ошибок типов при чтении
+        # Читаем всё как текст, чтобы не потерять ведущие нули или форматы
         df = pd.read_csv(SHEET_URL, dtype=str)
-        
-        if df.empty:
-            return None
+        if df.empty: return None
 
-        # 2. Переименование колонок
-        # Используем словарь для перевода заголовков из Гугл Таблицы (Русский) в код (Английский)
+        # Словарь для перевода заголовков из Гугл Таблицы
+        # Ключи - как в твоей таблице (Русский), Значения - внутренние имена (Английский)
         rename_map = {
             'Lat (Широта)': 'latitude', 
             'Long (Долгота)': 'longitude',
@@ -134,172 +121,214 @@ def load_data():
             'Адрес': 'Address',
             'Рабочее время': 'Hours'
         }
-        # Проверяем, есть ли нужные колонки, прежде чем переименовывать
-        available_cols = set(df.columns)
-        # Переименовываем только те, что нашли
-        df = df.rename(columns={k: v for k, v in rename_map.items() if k in available_cols})
         
-        # Проверка критических колонок
-        if 'latitude' not in df.columns or 'Gasolina 95' not in df.columns:
-            # Если переименование не сработало (заголовки в таблице другие), возвращаем ошибку с списком колонок
-            raise ValueError(f"Неверные заголовки в таблице. Найдены: {list(available_cols)}")
-
-        # 3. Очистка и конвертация данных
+        # Переименовываем только те колонки, которые существуют
+        cols_to_rename = {k: v for k, v in rename_map.items() if k in df.columns}
+        df = df.rename(columns=cols_to_rename)
+        
+        # Очистка цен (убираем € и пробелы, меняем запятую на точку)
         for col in ['Gasolina 95', 'Diesel']:
             if col in df.columns:
-                # Убираем значок евро и пробелы, меняем запятую на точку (на всякий случай)
-                df[col] = df[col].str.replace('€', '', regex=False).str.replace(' ', '', regex=False).str.replace(',', '.', regex=False)
-                # Превращаем в числа
+                df[col] = df[col].str.replace('€', '', regex=False)\
+                                 .str.replace(' ', '', regex=False)\
+                                 .str.replace(',', '.', regex=False)
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-        # Координаты
+        # Очистка координат
         df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
         df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
         
-        # Удаляем строки без координат
+        # Убираем строки без координат
         df = df.dropna(subset=['latitude', 'longitude'])
         
         return df
-    except Exception as e:
-        # Показываем ошибку прямо на экране
-        st.error(f"🔥 Ошибка в load_data: {e}")
+    except:
         return None
 
 def calculate_distance(lat1, lon1, lat2, lon2):
+    # Формула Haversine для расчета дистанции по сфере
     R = 6371 
-    # Конвертация в радианы
     lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
-    
     dlat = lat2 - lat1
     dlon = lon2 - lon1
     a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
     c = 2 * np.arcsin(np.sqrt(a))
     return R * c
 
-def get_location_from_zip(zip_code):
+def get_coords_from_zip(zip_code):
+    # Используем оффлайн-базу pgeocode (самый надежный метод)
     try:
-        # Используем pgeocode (оффлайн база) вместо Nominatim (онлайн API)
-        # Это намного надежнее и не блокируется.
-        nomi = pgeocode.Nominatim('es') # 'es' = Испания
-        
-        # pgeocode требует строку, ищет по базе
+        nomi = pgeocode.Nominatim('es') # es = Испания
         location = nomi.query_postal_code(str(zip_code).strip())
         
-        # Проверяем, нашли ли координаты (если нет, там будет NaN)
-        if not pd.isna(location.latitude) and not pd.isna(location.longitude):
+        if not np.isnan(location.latitude) and not np.isnan(location.longitude):
             return location.latitude, location.longitude
         return None
-    except Exception as e:
+    except:
         return None
 
-# --- 3. ИНТЕРФЕЙС ---
-st.set_page_config(page_title=APP_TITLE, page_icon="⛽", layout="wide")
+# --- 4. ИНТЕРФЕЙС ---
+st.set_page_config(page_title="WalletSafe", page_icon="⛽", layout="wide")
 
-# Инициализация языка
-if 'lang' not in st.session_state:
-    st.session_state.lang = "RU"
+# Стиль фона (CSS) - Темный, чистый, не раздражающий
+st.markdown("""
+    <style>
+    .stApp {
+        background-color: #0e1117;
+    }
+    /* Делаем текст читаемым */
+    h1, h2, h3, p, div, span {
+        color: #e0e0e0 !important;
+    }
+    /* Стиль для карточек */
+    div[data-testid="stVerticalBlock"] > div {
+        background-color: #1f242d;
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 10px;
+    }
+    /* Кнопки */
+    button {
+        border-radius: 8px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
+# Инициализация сессии для хранения языка и координат
+if 'lang' not in st.session_state: st.session_state.lang = "RU"
+if 'user_lat' not in st.session_state: st.session_state.user_lat = None
+if 'user_lon' not in st.session_state: st.session_state.user_lon = None
+
+# Сайдбар с настройками
 with st.sidebar:
+    # Выбор языка
     lang_choice = st.selectbox(
-        "🌐 Language / Язык / Idioma",
+        "🌐 Language",
         ["🇷🇺 Русский", "🇪🇸 Español", "🇬🇧 English"],
         index=0 if st.session_state.lang == "RU" else (1 if st.session_state.lang == "ES" else 2)
     )
+    
+    # Обновление языка
     if "Русский" in lang_choice: st.session_state.lang = "RU"
     elif "Español" in lang_choice: st.session_state.lang = "ES"
     else: st.session_state.lang = "EN"
+    
+    L = TRANSLATIONS[st.session_state.lang] # Загружаем словарь
 
-L = TRANSLATIONS[st.session_state.lang]
-
-st.title(f"⛽ {APP_TITLE}")
-st.write(L["title_sub"])
-
-df = load_data()
-
-if df is not None:
-    with st.sidebar:
-        st.header(L["sidebar_title"])
+    st.header(L["sidebar_header"])
+    
+    # Выбор режима поиска
+    mode = st.radio(L["search_mode_label"], [L["opt_geo"], L["opt_zip"]])
+    
+    # ЛОГИКА ГЕОЛОКАЦИИ
+    if mode == L["opt_geo"]:
+        st.write(L["geo_prompt"])
+        loc = get_geolocation() # Автоматический запрос
         
-        search_options = [L["mode_geo"], L["mode_city"], L["mode_zip"]]
-        search_mode = st.radio(L["search_mode"], search_options)
-        
-        # Инициализируем переменные для координат, чтобы они сохранялись между перезагрузками
-        if 'user_lat' not in st.session_state: st.session_state.user_lat = None
-        if 'user_lon' not in st.session_state: st.session_state.user_lon = None
-
-        # ЛОГИКА ПОИСКА
-        if search_mode == L["mode_geo"]:
-            loc = get_geolocation()
-            if loc:
-                st.session_state.user_lat = loc['coords']['latitude']
-                st.session_state.user_lon = loc['coords']['longitude']
-                st.success(L["geo_success"])
-            else:
-                st.info(L["geo_wait"])
-
-        elif search_mode == L["mode_city"]:
-            selected_city = st.selectbox(L["city_select"], list(CITIES.keys()))
-            st.session_state.user_lat = CITIES[selected_city]["lat"]
-            st.session_state.user_lon = CITIES[selected_city]["lon"]
-            
+        if loc:
+            st.session_state.user_lat = loc['coords']['latitude']
+            st.session_state.user_lon = loc['coords']['longitude']
+            st.success(L["geo_success"])
         else:
-            # Используем форму для почтового индекса
-            with st.form(key='zip_form'):
-                zip_code_input = st.text_input(L["zip_input"])
-                submit_button = st.form_submit_button(label=L["zip_search_btn"])
+            # Кнопка на случай если авто-запрос не сработал
+            if st.button(L["geo_btn_label"]):
+                st.info("Check browser permissions.")
+
+    # ЛОГИКА ИНДЕКСА (Через базу данных pgeocode)
+    else:
+        with st.form("zip_form"):
+            zip_code = st.text_input(L["zip_input_label"])
+            submitted = st.form_submit_button(L["zip_btn"])
             
-            if submit_button and zip_code_input:
-                coords = get_location_from_zip(zip_code_input)
+            if submitted and zip_code:
+                coords = get_coords_from_zip(zip_code)
                 if coords:
                     st.session_state.user_lat, st.session_state.user_lon = coords
-                    st.success(f"{L['zip_found']} {zip_code_input}")
+                    st.success(f"{L['zip_success']} {zip_code}")
                 else:
-                    st.error(L["zip_error"])
-        
-        st.divider()
-        st.subheader(L["filters"])
-        fuel_type = st.radio(L["fuel_type"], ["Gasolina 95", "Diesel"])
-        radius = st.slider(L["radius"], 1, 50, 10)
+                    st.error(L["zip_fail"])
 
-    # Используем координаты из session_state для отображения
+    st.divider()
+    st.subheader(L["filter_header"])
+    fuel_type = st.radio(L["fuel_label"], ["Gasolina 95", "Diesel"])
+    radius = st.slider(L["radius_label"], 1, 150, 10) # До 150 км
+
+# Заголовок страницы
+st.title(f"⛽ {L['page_title']}")
+st.write(L["sub_title"])
+
+# Загрузка данных
+df = load_data()
+
+# ОСНОВНАЯ ЧАСТЬ
+if df is not None:
     if st.session_state.user_lat and st.session_state.user_lon:
-        # Расчет дистанции
-        df['Distance_km'] = calculate_distance(st.session_state.user_lat, st.session_state.user_lon, df['latitude'].values, df['longitude'].values)
+        # Расчеты
+        df['Distance_km'] = calculate_distance(
+            st.session_state.user_lat, 
+            st.session_state.user_lon, 
+            df['latitude'].values, 
+            df['longitude'].values
+        )
         
-        # Фильтрация
+        # Фильтрация по радиусу и наличию цены
         mask = (df['Distance_km'] <= radius) & (df[fuel_type] > 0)
-        filtered_df = df[mask].copy()
+        results = df[mask].copy()
         
-        filtered_df = filtered_df.sort_values(by=fuel_type, ascending=True)
+        # Сортировка: Сначала дешевые
+        results = results.sort_values(by=fuel_type, ascending=True)
         
-        st.subheader(f"🏆 {L['top_list']}")
-        st.caption(f"{L['results_found']} {len(filtered_df)}")
+        # ВЫВОД СПИСКА (СВЕРХУ)
+        st.subheader(L["results_header"])
+        st.caption(f"{L['found_count']} {len(results)}")
         
-        if len(filtered_df) == 0:
-            st.warning(L["empty_area"])
+        if len(results) == 0:
+            st.warning(L["empty_warning"])
         else:
-            for i, row in filtered_df.head(5).iterrows():
+            # Показываем топ-10
+            for _, row in results.head(10).iterrows():
                 price = row[fuel_type]
+                # Ссылка на карты
                 maps_link = f"https://www.google.com/maps/dir/?api=1&destination={row['latitude']},{row['longitude']}"
                 
+                # Оформление карточки
                 with st.container():
-                    c1, c2, c3 = st.columns([3, 2, 2])
-                    with c1:
-                        st.markdown(f"### {row['Name']}")
-                        st.markdown(f"**{L['address']}** {row['Address']}")
-                        st.caption(f"⏰ {L['hours']} {row['Hours']}")
-                    with c2:
-                        st.metric(L["best_price"], f"{price:.3f} €")
-                    with c3:
-                        st.markdown(f"📏 **{row['Distance_km']:.1f} km**")
-                        st.markdown(f"""<a href="{maps_link}" target="_blank"><button style="background-color: #FF4B4B; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold;">{L['btn_route']}</button></a>""", unsafe_allow_html=True)
+                    col1, col2, col3 = st.columns([3, 2, 2])
+                    
+                    with col1:
+                        st.markdown(f"#### {row['Name']}")
+                        st.markdown(f"**{L['card_address']}** {row['Address']}")
+                        st.caption(f"{L['card_hours']} {row['Hours']}")
+                        
+                    with col2:
+                        st.metric(L["best_price_label"], f"{price:.3f} €")
+                        
+                    with col3:
+                        dist = f"{row['Distance_km']:.1f} {L['km_away']}"
+                        st.info(f"📏 {dist}")
+                        # Красная кнопка маршрута
+                        st.markdown(f"""
+                            <a href="{maps_link}" target="_blank" style="text-decoration: none;">
+                                <div style="
+                                    background-color: #ff4b4b;
+                                    color: white;
+                                    padding: 8px;
+                                    border-radius: 5px;
+                                    text-align: center;
+                                    font-weight: bold;
+                                    margin-top: 5px;">
+                                    {L['card_btn']} ➜
+                                </div>
+                            </a>
+                        """, unsafe_allow_html=True)
+                    
                     st.divider()
 
-            st.map(filtered_df[['latitude', 'longitude']])
+            # ВЫВОД КАРТЫ (СНИЗУ)
+            st.map(results[['latitude', 'longitude']])
             
     else:
-        if search_mode != L["mode_geo"]: 
-            st.info(L["start_prompt"])
+        # Если локация не выбрана
+        st.info(L["start_info"])
 else:
-    # Если df is None, ошибка уже показана в load_data
-    pass
+    st.error(L["loading_error"])
