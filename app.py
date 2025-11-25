@@ -20,6 +20,7 @@ TRANSLATIONS = {
         "mode_zip": "📮 Почтовый индекс",
         "city_select": "Выберите город:",
         "zip_input": "Введите индекс (например, 28001):",
+        "zip_search_btn": "🔍 Найти индекс",
         "zip_error": "❌ Индекс не найден. Проверьте формат.",
         "zip_found": "📍 Район найден: ",
         "geo_wait": "Разрешите доступ к геопозиции...",
@@ -48,6 +49,7 @@ TRANSLATIONS = {
         "mode_zip": "📮 Código Postal",
         "city_select": "Elige ciudad:",
         "zip_input": "Introduce CP (ej. 28001):",
+        "zip_search_btn": "🔍 Buscar CP",
         "zip_error": "❌ Código postal no encontrado.",
         "zip_found": "📍 Zona encontrada: ",
         "geo_wait": "Permita el acceso a la ubicación...",
@@ -76,6 +78,7 @@ TRANSLATIONS = {
         "mode_zip": "📮 Zip Code",
         "city_select": "Select city:",
         "zip_input": "Enter Zip Code (e.g. 28001):",
+        "zip_search_btn": "🔍 Search Zip",
         "zip_error": "❌ Zip code not found.",
         "zip_found": "📍 Area found: ",
         "geo_wait": "Allow location access...",
@@ -174,20 +177,20 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 
 def get_location_from_zip(zip_code):
     try:
-        # Обновленный User Agent для надежности
-        geolocator = Nominatim(user_agent="walletsafe_explorer_tool")
+        # Обновленный User Agent для надежности и таймаут
+        geolocator = Nominatim(user_agent="walletsafe_v3_secure_locator", timeout=10)
         zip_code = zip_code.strip()
         
-        # Попытка 1: Строгий поиск по коду
-        location = geolocator.geocode({"postalcode": zip_code, "country": "Spain"})
+        # Попытка 1: Формат "28001 Spain" (Самый надежный для Nominatim)
+        location = geolocator.geocode(f"{zip_code} Spain")
         
-        # Попытка 2: Если не нашли, пробуем формат "28001, España"
+        # Попытка 2: Строгий поиск по словарю
         if not location:
-            location = geolocator.geocode(f"{zip_code}, España")
+            location = geolocator.geocode({"postalcode": zip_code, "country": "Spain"})
             
-        # Попытка 3: Формат "CP 28001, Spain"
+        # Попытка 3: Поиск просто по номеру (иногда работает лучше)
         if not location:
-            location = geolocator.geocode(f"CP {zip_code}, Spain")
+            location = geolocator.geocode(zip_code)
         
         if location:
             return location.latitude, location.longitude
@@ -226,29 +229,36 @@ if df is not None:
         search_options = [L["mode_geo"], L["mode_city"], L["mode_zip"]]
         search_mode = st.radio(L["search_mode"], search_options)
         
-        my_lat, my_lon = None, None
-        
+        # Инициализируем переменные для координат, чтобы они сохранялись между перезагрузками
+        if 'user_lat' not in st.session_state: st.session_state.user_lat = None
+        if 'user_lon' not in st.session_state: st.session_state.user_lon = None
+
+        # ЛОГИКА ПОИСКА
         if search_mode == L["mode_geo"]:
             loc = get_geolocation()
             if loc:
-                my_lat = loc['coords']['latitude']
-                my_lon = loc['coords']['longitude']
+                st.session_state.user_lat = loc['coords']['latitude']
+                st.session_state.user_lon = loc['coords']['longitude']
                 st.success(L["geo_success"])
             else:
                 st.info(L["geo_wait"])
 
         elif search_mode == L["mode_city"]:
             selected_city = st.selectbox(L["city_select"], list(CITIES.keys()))
-            my_lat = CITIES[selected_city]["lat"]
-            my_lon = CITIES[selected_city]["lon"]
+            st.session_state.user_lat = CITIES[selected_city]["lat"]
+            st.session_state.user_lon = CITIES[selected_city]["lon"]
             
         else:
-            zip_code = st.text_input(L["zip_input"])
-            if zip_code:
-                coords = get_location_from_zip(zip_code)
+            # Используем форму для почтового индекса, чтобы избежать спам-запросов при вводе
+            with st.form(key='zip_form'):
+                zip_code_input = st.text_input(L["zip_input"])
+                submit_button = st.form_submit_button(label=L["zip_search_btn"])
+            
+            if submit_button and zip_code_input:
+                coords = get_location_from_zip(zip_code_input)
                 if coords:
-                    my_lat, my_lon = coords
-                    st.success(f"{L['zip_found']} {zip_code}")
+                    st.session_state.user_lat, st.session_state.user_lon = coords
+                    st.success(f"{L['zip_found']} {zip_code_input}")
                 else:
                     st.error(L["zip_error"])
         
@@ -257,9 +267,10 @@ if df is not None:
         fuel_type = st.radio(L["fuel_type"], ["Gasolina 95", "Diesel"])
         radius = st.slider(L["radius"], 1, 50, 10)
 
-    if my_lat and my_lon:
+    # Используем координаты из session_state для отображения
+    if st.session_state.user_lat and st.session_state.user_lon:
         # Расчет дистанции
-        df['Distance_km'] = calculate_distance(my_lat, my_lon, df['latitude'].values, df['longitude'].values)
+        df['Distance_km'] = calculate_distance(st.session_state.user_lat, st.session_state.user_lon, df['latitude'].values, df['longitude'].values)
         
         # Фильтрация
         mask = (df['Distance_km'] <= radius) & (df[fuel_type] > 0)
