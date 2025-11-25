@@ -110,14 +110,18 @@ CITIES = {
 }
 
 # --- 2. ФУНКЦИИ ---
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=60, show_spinner=True)
 def load_data():
     try:
-        df = pd.read_csv(SHEET_URL)
-        if df.empty: return None
+        # 1. Читаем все как строки (dtype=str), чтобы избежать ошибок типов при чтении
+        df = pd.read_csv(SHEET_URL, dtype=str)
+        
+        if df.empty:
+            return None
 
-        # Переименование (Внутренние имена остаются английскими для логики)
-        df = df.rename(columns={
+        # 2. Переименование колонок
+        # Используем словарь для перевода заголовков из Гугл Таблицы (Русский) в код (Английский)
+        rename_map = {
             'Lat (Широта)': 'latitude', 
             'Long (Долгота)': 'longitude',
             'Название заправки': 'Name',
@@ -125,40 +129,57 @@ def load_data():
             'Дизель': 'Diesel',
             'Адрес': 'Address',
             'Рабочее время': 'Hours'
-        })
+        }
+        # Проверяем, есть ли нужные колонки, прежде чем переименовывать
+        available_cols = set(df.columns)
+        # Переименовываем только те, что нашли
+        df = df.rename(columns={k: v for k, v in rename_map.items() if k in available_cols})
         
-        # Очистка
-        for col in ['Gasolina 95', 'Diesel']:
-            df[col] = df[col].astype(str).str.replace('€', '').str.replace(' ', '')
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        # Проверка критических колонок
+        if 'latitude' not in df.columns or 'Gasolina 95' not in df.columns:
+            # Если переименование не сработало (заголовки в таблице другие), возвращаем ошибку с списком колонок
+            raise ValueError(f"Неверные заголовки в таблице. Найдены: {list(available_cols)}")
 
+        # 3. Очистка и конвертация данных
+        for col in ['Gasolina 95', 'Diesel']:
+            if col in df.columns:
+                # Убираем значок евро и пробелы, меняем запятую на точку (на всякий случай)
+                df[col] = df[col].str.replace('€', '', regex=False).str.replace(' ', '', regex=False).str.replace(',', '.', regex=False)
+                # Превращаем в числа
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+        # Координаты
         df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
         df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
+        
+        # Удаляем строки без координат
         df = df.dropna(subset=['latitude', 'longitude'])
         
         return df
-    except:
+    except Exception as e:
+        # Показываем ошибку прямо на экране
+        st.error(f"🔥 Ошибка в load_data: {e}")
         return None
 
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 6371 
-    dlat = np.radians(lat2 - lat1)
-    dlon = np.radians(lon2 - lon1)
-    a = np.sin(dlat/2) * np.sin(dlat/2) + np.cos(np.radians(lat1)) \
-        * np.cos(np.radians(lat2)) * np.sin(dlon/2) * np.sin(dlon/2)
-    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
+    # Конвертация в радианы
+    lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
+    
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
+    c = 2 * np.arcsin(np.sqrt(a))
     return R * c
 
 def get_location_from_zip(zip_code):
     try:
-        # Улучшенный поиск: указываем страну явно
-        geolocator = Nominatim(user_agent="walletsafe_spain_explorer")
-        # Сначала пробуем строгий поиск по Испании
+        geolocator = Nominatim(user_agent="walletsafe_app_v2")
+        # Строгий поиск
         location = geolocator.geocode({"postalcode": zip_code, "country": "Spain"})
-        # Если не нашли, пробуем просто текст
         if not location:
             location = geolocator.geocode(f"{zip_code}, Spain")
-            
+        
         if location:
             return location.latitude, location.longitude
         return None
@@ -168,23 +189,21 @@ def get_location_from_zip(zip_code):
 # --- 3. ИНТЕРФЕЙС ---
 st.set_page_config(page_title=APP_TITLE, page_icon="⛽", layout="wide")
 
-# Выбор языка (В сайдбаре сверху)
+# Инициализация языка
+if 'lang' not in st.session_state:
+    st.session_state.lang = "RU"
+
 with st.sidebar:
-    # Используем session_state чтобы помнить выбор
-    if 'lang' not in st.session_state:
-        st.session_state.lang = "RU"
-        
     lang_choice = st.selectbox(
         "🌐 Language / Язык / Idioma",
         ["🇷🇺 Русский", "🇪🇸 Español", "🇬🇧 English"],
         index=0 if st.session_state.lang == "RU" else (1 if st.session_state.lang == "ES" else 2)
     )
-    
     if "Русский" in lang_choice: st.session_state.lang = "RU"
     elif "Español" in lang_choice: st.session_state.lang = "ES"
     else: st.session_state.lang = "EN"
 
-    L = TRANSLATIONS[st.session_state.lang] # Текущий словарь
+L = TRANSLATIONS[st.session_state.lang]
 
 st.title(f"⛽ {APP_TITLE}")
 st.write(L["title_sub"])
@@ -192,21 +211,16 @@ st.write(L["title_sub"])
 df = load_data()
 
 if df is not None:
-    # --- БОКОВАЯ ПАНЕЛЬ ---
     with st.sidebar:
         st.header(L["sidebar_title"])
         
-        # Режимы поиска
         search_options = [L["mode_geo"], L["mode_city"], L["mode_zip"]]
         search_mode = st.radio(L["search_mode"], search_options)
         
         my_lat, my_lon = None, None
         
-        # ЛОГИКА 1: Геолокация
         if search_mode == L["mode_geo"]:
-            # Автоматически запрашиваем локацию
             loc = get_geolocation()
-            
             if loc:
                 my_lat = loc['coords']['latitude']
                 my_lon = loc['coords']['longitude']
@@ -214,13 +228,11 @@ if df is not None:
             else:
                 st.info(L["geo_wait"])
 
-        # ЛОГИКА 2: Город
         elif search_mode == L["mode_city"]:
             selected_city = st.selectbox(L["city_select"], list(CITIES.keys()))
             my_lat = CITIES[selected_city]["lat"]
             my_lon = CITIES[selected_city]["lon"]
             
-        # ЛОГИКА 3: Zip (Индекс)
         else:
             zip_code = st.text_input(L["zip_input"])
             if zip_code:
@@ -236,18 +248,16 @@ if df is not None:
         fuel_type = st.radio(L["fuel_type"], ["Gasolina 95", "Diesel"])
         radius = st.slider(L["radius"], 1, 50, 10)
 
-    # --- РЕЗУЛЬТАТЫ ---
     if my_lat and my_lon:
-        df['Distance_km'] = calculate_distance(my_lat, my_lon, df['latitude'], df['longitude'])
+        # Расчет дистанции
+        df['Distance_km'] = calculate_distance(my_lat, my_lon, df['latitude'].values, df['longitude'].values)
         
-        filtered_df = df[
-            (df['Distance_km'] <= radius) & 
-            (df[fuel_type] > 0)
-        ].copy()
+        # Фильтрация
+        mask = (df['Distance_km'] <= radius) & (df[fuel_type] > 0)
+        filtered_df = df[mask].copy()
         
         filtered_df = filtered_df.sort_values(by=fuel_type, ascending=True)
         
-        # 1. СПИСОК (СВЕРХУ)
         st.subheader(f"🏆 {L['top_list']}")
         st.caption(f"{L['results_found']} {len(filtered_df)}")
         
@@ -260,41 +270,22 @@ if df is not None:
                 
                 with st.container():
                     c1, c2, c3 = st.columns([3, 2, 2])
-                    
                     with c1:
                         st.markdown(f"### {row['Name']}")
                         st.markdown(f"**{L['address']}** {row['Address']}")
                         st.caption(f"⏰ {L['hours']} {row['Hours']}")
-                    
                     with c2:
                         st.metric(L["best_price"], f"{price:.3f} €")
-                    
                     with c3:
                         st.markdown(f"📏 **{row['Distance_km']:.1f} km**")
-                        # Кнопка
-                        st.markdown(f"""
-                            <a href="{maps_link}" target="_blank">
-                                <button style="
-                                    background-color: #FF4B4B; 
-                                    color: white; 
-                                    padding: 8px 16px; 
-                                    border: none; 
-                                    border-radius: 4px; 
-                                    cursor: pointer;
-                                    width: 100%;
-                                    font-weight: bold;">
-                                    {L['btn_route']}
-                                </button>
-                            </a>
-                        """, unsafe_allow_html=True)
+                        st.markdown(f"""<a href="{maps_link}" target="_blank"><button style="background-color: #FF4B4B; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold;">{L['btn_route']}</button></a>""", unsafe_allow_html=True)
                     st.divider()
 
-            # 2. КАРТА (СНИЗУ)
             st.map(filtered_df[['latitude', 'longitude']])
             
     else:
-        # Если не выбрана локация
         if search_mode != L["mode_geo"]: 
             st.info(L["start_prompt"])
 else:
-    st.error("Error loading data / Ошибка загрузки данных")
+    # Если df is None, ошибка уже показана в load_data
+    pass
