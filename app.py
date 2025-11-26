@@ -1,273 +1,157 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-from geopy.geocoders import Nominatim
-from geopy.extra.rate_limiter import RateLimiter
+# app.py – WalletSafe (Python + Flask version)
+# Double-click or run: python3 app.py
 
-# --- 1. КОНФИГУРАЦИЯ ---
-st.set_page_config(page_title="WalletSafe", page_icon="⛽", layout="wide")
+from flask import Flask, render_template_string, request, jsonify
+import math
+import requests
 
-# Твоя таблица
-SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRLv_PUqHNCedwZhQIU5YtgH78T3uGxpd3v6CY2k368WP4gxDPFELdoplO5-ujpzSz53dJVkZ2dQbeZ/pub?gid=0&single=true&output=csv"
+app = Flask(__name__)
 
-# --- ВСТРОЕННАЯ БАЗА ИНДЕКСОВ (Гарантия работы) ---
-# Если внешний сервис откажет, эти индексы сработают 100%
-FALLBACK_ZIPS = {
-    "28001": (40.420, -3.680), "28002": (40.445, -3.678), "28003": (40.440, -3.700), # Мадрид
-    "08001": (41.380, 2.170),  "08002": (41.385, 2.180),  "08003": (41.390, 2.185),  # Барселона
-    "46001": (39.470, -0.376), "46002": (39.472, -0.373), # Валенсия
-    "41001": (37.390, -5.990), # Севилья
-    "29001": (36.720, -4.420), # Малага
-    "50001": (41.650, -0.880), # Сарагоса
-    "48001": (43.260, -2.930), # Бильбао
-    "03001": (38.345, -0.480), # Аликанте
-    "15001": (43.360, -8.410), # Ла-Корунья
-    "35001": (28.100, -15.41), # Лас-Пальмас
-    "07001": (39.570, 2.650)   # Пальма
-}
+# ——— ALL STATIONS (filtered, 0.000 removed) ———
+stations = [
+    {"name": "Nº 10.935", "city": "Abengibre", "gas95": 1.399, "diesel": 1.419, "hours": "07:00–22:00", "lat": 39.211417, "lng": -1.539167},
+    {"name": "PLENERGY", "city": "Albacete", "gas95": 1.379, "diesel": 1.337, "hours": "24/7", "lat": 39.000861, "lng": -1.849833},
+    {"name": "A&A", "city": "Albacete", "gas95": 1.347, "diesel": 1.297, "hours": "09:00–21:30", "lat": 39.006889, "lng": -1.885361},
+    {"name": "FAMILY ENERGY", "city": "Albacete", "gas95": 1.359, "diesel": 1.319, "hours": "07:00–23:00", "lat": 38.988972, "lng": -1.847361},
+    {"name": "ALCAMPO", "city": "Albacete", "gas95": 1.339, "diesel": 1.330, "hours": "24/7", "lat": 39.009639, "lng": -1.878111},
+    {"name": "GMOIL", "city": "Albacete", "gas95": 1.335, "diesel": 1.295, "hours": "24/7", "lat": 39.022139, "lng": -1.882056},
+    {"name": "BALLENOIL", "city": "Almansa", "gas95": 1.379, "diesel": 1.349, "hours": "24/7", "lat": 38.871556, "lng": -1.108000},
+    {"name": "PLENERGY", "city": "Almansa", "gas95": 1.379, "diesel": 1.349, "hours": "24/7", "lat": 38.878667, "lng": -1.100028},
+    {"name": "VIRGEN DE LAS NIEVES", "city": "Cenizate", "gas95": 1.372, "diesel": 1.379, "hours": "24/7", "lat": 39.301000, "lng": -1.664167},
+    {"name": "LA REMEDIADORA", "city": "La Roda", "gas95": 1.329, "diesel": 1.319, "hours": "24/7", "lat": 39.201139, "lng": -2.147750},
+    # ... (more stations — you can keep adding the rest here)
+]
 
-# --- 2. ПЕРЕВОДЫ ---
-TRANS = {
-    "RU": {
-        "sb_title": "Настройки поиска",
-        "method": "Метод поиска",
-        "m_geo": "📍 Геолокация",
-        "m_zip": "📮 Почтовый индекс",
-        "zip_input": "Введите индекс (5 цифр):",
-        "zip_btn": "🔍 Найти",
-        "zip_ok": "✅ Индекс найден!",
-        "zip_err": "❌ Индекс не найден.",
-        "filter": "Фильтры",
-        "fuel": "Тип топлива",
-        "rad": "Радиус (км)",
-        "rad_help": "0.5 = 500 метров",
-        "res": "Результаты",
-        "found": "Найдено:",
-        "best": "Лучшая цена",
-        "empty": "😔 Ничего не найдено. Увеличьте радиус.",
-        "price": "Цена",
-        "addr": "Адрес",
-        "hours": "Часы",
-        "nav": "📍 Маршрут",
-        "start": "👈 Выберите метод поиска слева.",
-        "loading": "Загрузка данных...",
-        "geo_manual": "Введите ваши координаты (или разрешите GPS):"
-    },
-    "EN": {
-        "sb_title": "Search Settings",
-        "method": "Search Method",
-        "m_geo": "📍 Geolocation",
-        "m_zip": "📮 Zip Code",
-        "zip_input": "Enter Zip Code (5 digits):",
-        "zip_btn": "🔍 Search",
-        "zip_ok": "✅ Zip found!",
-        "zip_err": "❌ Zip not found.",
-        "filter": "Filters",
-        "fuel": "Fuel Type",
-        "rad": "Radius (km)",
-        "rad_help": "0.5 = 500 meters",
-        "res": "Results",
-        "found": "Found:",
-        "best": "Best Price",
-        "empty": "😔 Nothing found. Increase radius.",
-        "price": "Price",
-        "addr": "Address",
-        "hours": "Hours",
-        "nav": "📍 Route",
-        "start": "👈 Select search method on the left.",
-        "loading": "Loading data...",
-        "geo_manual": "Enter coordinates (or allow GPS):"
-    },
-    "ES": {
-        "sb_title": "Configuración",
-        "method": "Método de búsqueda",
-        "m_geo": "📍 Geolocalización",
-        "m_zip": "📮 Código Postal",
-        "zip_input": "Introduce CP (5 dígitos):",
-        "zip_btn": "🔍 Buscar",
-        "zip_ok": "✅ CP encontrado!",
-        "zip_err": "❌ CP no encontrado.",
-        "filter": "Filtros",
-        "fuel": "Combustible",
-        "rad": "Radio (km)",
-        "rad_help": "0.5 = 500 metros",
-        "res": "Resultados",
-        "found": "Encontradas:",
-        "best": "Mejor precio",
-        "empty": "😔 No hay resultados. Aumenta el radio.",
-        "price": "Precio",
-        "addr": "Dirección",
-        "hours": "Horario",
-        "nav": "📍 Ruta",
-        "start": "👈 Selecciona método a la izquierda.",
-        "loading": "Cargando datos...",
-        "geo_manual": "Introduce coordenadas (o permite GPS):"
-    }
-}
+# Simple haversine distance
+def distance(lat1, lon1, lat2, lon2):
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
-# --- 3. ЛОГИКА ---
-@st.cache_data(ttl=300)
-def load_data():
+# Geocode ZIP (free)
+def geocode_zip(zip_code):
     try:
-        # Читаем как текст, чтобы не потерять форматы
-        df = pd.read_csv(SHEET_URL, dtype=str)
-        
-        # Переименование (Русский -> English Internal)
-        rename = {
-            'Lat (Широта)': 'lat', 'Long (Долгота)': 'lon',
-            'Название заправки': 'name', 'Бензин 95': 'p95',
-            'Дизель': 'diesel', 'Адрес': 'addr', 'Рабочее время': 'hours'
-        }
-        # Умное переименование
-        cols_found = {k: v for k, v in rename.items() if k in df.columns}
-        df = df.rename(columns=cols_found)
-        
-        # Чистка цен
-        for c in ['p95', 'diesel']:
-            if c in df.columns:
-                df[c] = df[c].str.replace('€','').str.replace(' ','').str.replace(',','.')
-                df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-        
-        # Чистка координат
-        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-        df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
-        
-        return df.dropna(subset=['lat', 'lon'])
-    except:
-        return None
-
-def get_coords_zip(zip_code):
-    z = str(zip_code).strip().zfill(5)
-    
-    # 1. Проверка встроенной базы (Мгновенно)
-    if z in FALLBACK_ZIPS:
-        return FALLBACK_ZIPS[z]
-    
-    # 2. Онлайн поиск (Если нет в базе)
-    try:
-        geolocator = Nominatim(user_agent="walletsafe_final_v99")
-        loc = geolocator.geocode({"postalcode": z, "country": "Spain"})
-        if loc: return loc.latitude, loc.longitude
-        
-        # Попытка текстом
-        loc = geolocator.geocode(f"{z}, Spain")
-        if loc: return loc.latitude, loc.longitude
+        url = f"https://nominatim.openstreetmap.org/search?q={zip_code},Spain&format=json&limit=1"
+        r = requests.get(url, headers={'User-Agent': 'WalletSafe/1.0'}, timeout=5)
+        data = r.json()
+        if data:
+            return float(data[0]['lat']), float(data[0]['lon'])
     except:
         pass
     return None
 
-def calc_dist(lat1, lon1, lat2, lon2):
-    R = 6371
-    lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
-    a = np.sin((lat2-lat1)/2)**2 + np.cos(lat1)*np.cos(lat2)*np.sin((lon2-lon1)/2)**2
-    return R * 2 * np.arcsin(np.sqrt(a))
+HTML = '''
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WalletSafe – Дешёвый бензин рядом</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <style>
+        body{font-family:Arial;margin:0;background:#f0f8ff;color:#333}
+        header{background:#1976D2;color:white;padding:1rem;text-align:center}
+        .logo{font-size:1.8rem;font-weight:bold}
+        .container{max-width:1100px;margin:auto;padding:1rem}
+        .form{background:white;padding:1rem;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);margin-bottom:1rem;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+        select,input,button{padding:10px;border-radius:4px;border:1px solid #ccc}
+        button{background:#1976D2;color:white;border:none;cursor:pointer}
+        button:hover{background:#1565c0}
+        .results{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+        .card{background:white;padding:1rem;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1)}
+        .price{font-size:1.4rem;font-weight:bold;color:#2E7D32}
+        .save{color:#4CAF50;font-weight:bold}
+        #map{height:400px;margin:2rem 0;border-radius:8px;display:none}
+    </style>
+</head>
+<body>
+<header><div class="logo">WalletSafe</div></header>
+<div class="container">
+    <div class="form">
+        <select id="fuel"><option value="gas95">Бензин 95</option><option value="diesel">Дизель</option></select>
+        <input type="text" id="zip" placeholder="Почтовый индекс (например 02001)">
+        <button onclick="geo()">Моя геолокация</button>
+        <input type="range" id="dist" min="5" max="100" value="30" oninput="d.value=value"><output id="d">30</output> км
+        <button onclick="search()">Поиск</button>
+    </div>
+    <div id="results"></div>
+    <div id="map"></div>
+</div>
 
-# --- 4. ИНТЕРФЕЙС ---
-# Стилизация: Темный профессиональный фон
-st.markdown("""
-<style>
-    .stApp { background-color: #0E1117; color: white; }
-    .stSidebar { background-color: #262730; }
-    h1, h2, h3, label, p { color: #FAFAFA !important; }
-    div.stContainer {
-        background-color: #1E1E1E; border: 1px solid #444; 
-        padding: 15px; border-radius: 10px; margin-bottom: 10px;
-    }
-    button { border-radius: 8px !important; }
-</style>
-""", unsafe_allow_html=True)
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let map, marker;
+async function search(){
+    const fuel=document.getElementById('fuel').value;
+    const zip=document.getElementById('zip').value.trim();
+    const maxDist=parseInt(document.getElementById('dist').value);
+    let lat, lng;
+    if(zip){const resp=await fetch(`/zip/${zip}`);const data=await resp.json();if(!data.error){lat=data.lat;lng=data.lng;}}
+    else if(navigator.geolocation){
+        const pos=await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej));
+        lat=pos.coords.latitude; lng=pos.coords.longitude;
+    }else{alert("Введите ZIP или разрешите геолокацию");return;}
+    const resp=await fetch(`/search?fuel=${fuel}&lat=${lat}&lng=${lng}&dist=${maxDist}`);
+    const stations=await resp.json();
+    const r=document.getElementById('results');
+    r.innerHTML='';
+    if(stations.length===0){r.innerHTML='<p>Ничего не найдено в этом радиусе</p>';return;}
+    stations.forEach(s=>{
+        const div=document.createElement('div');div.className='card';
+        div.innerHTML=`<h3>${s.name} (${s.city})</h3>
+            <p class="price">${s.price} €/л</p>
+            <p>${s.dist.toFixed(1)} км • Экономия ${(s.avg-s.price).toFixed(3)} €/л</p>
+            <p>${s.hours}</p>
+            <button onclick="showMap(${s.lat},${s.lng},'${s.name}')">Показать на карте</button>`;
+        r.appendChild(div);
+    });
+}
+function showMap(lat,lng,name){
+    const m=document.getElementById('map');
+    m.style.display='block';
+    if(map)map.remove();
+    map=L.map('map').setView([lat,lng],13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    L.marker([lat,lng]).addTo(map).bindPopup(name).openPopup();
+}
+function geo(){
+    document.getElementById('zip').value='';
+    search();
+}
+</script>
+</body>
+</html>
+'''
 
-# Состояние сессии
-if 'lang' not in st.session_state: st.session_state.lang = "RU"
-if 'u_lat' not in st.session_state: st.session_state.u_lat = None
-if 'u_lon' not in st.session_state: st.session_state.u_lon = None
+@app.route('/')
+def index():
+    return render_template_string(HTML)
 
-# Сайдбар
-with st.sidebar:
-    # Выбор языка
-    lang_opt = st.selectbox("🌐", ["🇷🇺 Русский", "🇪🇸 Español", "🇬🇧 English"], 
-                            index=0 if st.session_state.lang=="RU" else (1 if st.session_state.lang=="ES" else 2))
-    
-    if "Русский" in lang_opt: st.session_state.lang = "RU"
-    elif "Español" in lang_opt: st.session_state.lang = "ES"
-    else: st.session_state.lang = "EN"
-    
-    T = TRANS[st.session_state.lang]
-    
-    st.header(T["sb_title"])
-    
-    # Только 2 метода
-    method = st.radio(T["method"], [T["m_geo"], T["m_zip"]])
-    
-    if method == T["m_geo"]:
-        # В Streamlit Cloud чистый JS для гео сложен, используем эмуляцию для стабильности
-        # или просим пользователя ввести примерные координаты, если браузер блокирует
-        # Для простоты - кнопка "Locate Me" через браузер работает через компонент, но мы упростим:
-        # Мы используем fallback на ручной ввод координат если js не работает
-        st.info("ℹ️ Streamlit Cloud может блокировать GPS. Введите координаты вручную или используйте Индекс.")
-        lat_in = st.number_input("Lat", value=40.416, format="%.4f")
-        lon_in = st.number_input("Lon", value=-3.703, format="%.4f")
-        if st.button(T["zip_btn"]):
-            st.session_state.u_lat = lat_in
-            st.session_state.u_lon = lon_in
-            
-    else:
-        # Поиск по индексу
-        with st.form("zip"):
-            code = st.text_input(T["zip_input"])
-            if st.form_submit_button(T["zip_btn"]):
-                coords = get_coords_zip(code)
-                if coords:
-                    st.session_state.u_lat, st.session_state.u_lon = coords
-                    st.success(T["zip_ok"])
-                else:
-                    st.error(T["zip_err"])
+@app.route('/zip/<zip_code>')
+def zip_route(zip_code):
+    coords = geocode_zip(zip_code)
+    if coords:
+        return jsonify(lat=coords[0], lng=coords[1])
+    return jsonify(error="Invalid ZIP"), 400
 
-    st.divider()
-    st.subheader(T["filter"])
-    fuel = st.radio(T["fuel"], ["Gasolina 95", "Diesel"])
-    rad = st.number_input(T["rad"], 0.1, 100.0, 10.0, 0.5, help=T["rad_help"])
+@app.route('/search')
+def search():
+    fuel = request.args.get('fuel')
+    lat = float(request.args.get('lat'))
+    lng = float(request.args.get('lng'))
+    max_dist = float(request.args.get('dist', 50))
+    results = []
+    avg = sum(s[fuel] for s in stations if s[fuel]>0) / len([s for s in stations if s[fuel]>0])
+    for s in stations:
+        if s[fuel] == 0: continue
+        dist = distance(lat, lng, s['lat'], s['lng'])
+        if dist <= max_dist:
+            results.append({**s, 'dist': dist, 'price': s[fuel], 'avg': round(avg,3)})
+    results.sort(key=lambda x: (x['price'], x['dist']))
+    return jsonify(results[:20])
 
-# Главный экран
-st.title("⛽ WalletSafe")
-df = load_data()
-
-if df is not None and st.session_state.u_lat:
-    # Расчет
-    df['dist'] = calc_dist(st.session_state.u_lat, st.session_state.u_lon, 
-                          df['lat'].values, df['lon'].values)
-    
-    col_fuel = 'p95' if '95' in fuel else 'diesel'
-    
-    # Фильтр
-    res = df[(df['dist'] <= rad) & (df[col_fuel] > 0)].copy()
-    res = res.sort_values(by=col_fuel)
-    
-    st.subheader(T["res"])
-    st.caption(f"{T['found']} {len(res)}")
-    
-    if len(res) == 0:
-        st.warning(T["empty"])
-    else:
-        # 1. СПИСОК
-        for _, row in res.head(10).iterrows():
-            link = f"https://www.google.com/maps/dir/?api=1&destination={row['lat']},{row['lon']}"
-            
-            with st.container():
-                c1, c2, c3 = st.columns([3, 2, 2])
-                with c1:
-                    st.markdown(f"**{row['name']}**")
-                    st.caption(f"{row['addr']}")
-                    st.caption(f"🕒 {row['hours']}")
-                with c2:
-                    st.metric(T["price"], f"{row[col_fuel]:.3f} €")
-                with c3:
-                    st.markdown(f"📏 **{row['dist']:.1f} km**")
-                    st.markdown(f"[**{T['nav']}**]({link})")
-        
-        # 2. КАРТА
-        st.map(res[['lat', 'lon']])
-
-else:
-    if not st.session_state.u_lat:
-        st.info(T["start"])
+if __name__ == '__main__':
+    print("WalletSafe запущен! Откройте в браузере: http://127.0.0.1:5000")
+    app.run(debug=True)
