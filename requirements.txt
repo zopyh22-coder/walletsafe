@@ -1,15 +1,1 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
-diff --git a/requirements.txt b/requirements.txt
-index 30692b7645ff74a6d3a05be8656724579fd51a60..4dedb3d7f31431c48a43fa2479ed7d90b8b458a9 100644
---- a/requirements.txt
-+++ b/requirements.txt
-@@ -1,2 +1,6 @@
- flask
- requests
-+streamlit
-+pandas
-+folium
-+streamlit-folium
- 
-EOF
-)
+
