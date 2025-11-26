@@ -1,4 +1,6 @@
 streamlit
+gspread
 pandas
-numpy
-geopy
+openpyxl
+folium
+streamlit-folium
