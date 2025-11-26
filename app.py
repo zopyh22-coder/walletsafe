@@ -1,13 +1,14 @@
 # app.py - WalletSafe (Streamlit version, live from CSV, languages, tabs)
-import streamlit as st
+import math
+from datetime import datetime
+from io import StringIO
+
+import folium
 import pandas as pd
 import requests
-from io import StringIO
-from datetime import datetime, timedelta
-import folium
-from streamlit_folium import st_folium
-import math
+import streamlit as st
 import streamlit.components.v1 as components
+from streamlit_folium import st_folium
 
 # Wallet Logo (New clean, modern design)
 wallet_svg = """
@@ -77,6 +78,58 @@ translations = {
     }
 }
 
+DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRLv_PUqHNCedwZhQIU5YtgH78T3uGxpd3v6CY2k368WP4gxDPFELdoplO5-ujpzSz53dJVkZ2dQbeZ/pub?gid=0&single=true&output=csv"
+
+
+def geocode_zip(zip_code):
+    url = f"https://nominatim.openstreetmap.org/search?q={zip_code},Spain&format=json&limit=1"
+    try:
+        response = requests.get(url, headers={"User-Agent": "WalletSafe"}, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+    except requests.RequestException:
+        return None
+
+    if not data:
+        return None
+
+    try:
+        return (float(data[0]["lat"]), float(data[0]["lon"]))
+    except (KeyError, TypeError, ValueError, IndexError):
+        return None
+
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371
+    a = math.sin(math.radians(lat2 - lat1) / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(
+        math.radians(lat2)
+    ) * math.sin(math.radians(lon2 - lon1) / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+@st.cache_data(ttl=3600)
+def load_stations():
+    response = requests.get(DATA_URL, headers={"User-Agent": "WalletSafe"}, timeout=15)
+    response.raise_for_status()
+
+    df = pd.read_csv(StringIO(response.text))
+    required_columns = {"name", "city", "hours", "lat", "lng", "gas95", "diesel"}
+    missing_columns = required_columns - set(df.columns)
+    if missing_columns:
+        raise ValueError(f"Dataset is missing columns: {', '.join(sorted(missing_columns))}")
+
+    df = df.dropna(subset=["lat", "lng"])
+    df["lat"] = df["lat"].astype(float)
+    df["lng"] = df["lng"].astype(float)
+    df["gas95"] = df["gas95"].astype(float)
+    df["diesel"] = df["diesel"].astype(float)
+
+    last_update = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    return df.to_dict("records"), last_update
+
+# Page config should be the first Streamlit call
+st.set_page_config(page_title="WalletSafe", layout="centered")
+
 # Language selector (top right, small flags)
 st.markdown("""
 <style>
@@ -103,7 +156,12 @@ query_params = st.query_params
 st.session_state.lang = query_params.get('lang', ['ru'])[0]
 t = translations[st.session_state.lang]
 
-st.set_page_config(page_title="WalletSafe", layout="centered")
+try:
+    stations, last_update = load_stations()
+except Exception as exc:  # pragma: no cover - defensive UI path
+    stations = []
+    last_update = "Unavailable"
+    st.error(f"Failed to load station data: {exc}")
 
 # CSS for clean, easy layout (short slider)
 st.markdown("""
@@ -184,7 +242,7 @@ with tab2:
         lng = st.session_state['lng']
         fuel = st.session_state['fuel']
         radius = st.session_state['radius']
-        
+
         results = []
         for s in stations:
             dist = haversine(lat, lng, s['lat'], s['lng'])
@@ -198,8 +256,10 @@ with tab2:
         else:
             st.success(t['stations_found'].format(count=len(results)))
 
-            for s in results[:5]:
-                col_a, col_b = st.columns([4,1])
+            top_results = results[:5]
+
+            for s in top_results:
+                col_a, col_b = st.columns([4, 1])
                 with col_a:
                     st.markdown(f"""
                         <div class="station">
@@ -211,27 +271,17 @@ with tab2:
                 with col_b:
                     st.markdown(f"[ {t['drive']} ](https://www.google.com/maps/dir/?api=1&destination={s['lat']},{s['lng']})")
 
-                # Map
-                m = folium.Map([lat, lng], zoom_start=11)
-                folium.CircleMarker([lat, lng], radius=10, color="#0066ff", popup="You").add_to(m)
-                for s in results[:5]:
-                    folium.Marker([s['lat'], s['lng']], popup=f"{s['name']} - {s['price']:.3f} €", icon=folium.Icon(color="red")).add_to(m)
-                    folium.PolyLine([[lat,lng],[s['lat'],s['lng']]], color="#0066ff", weight=4).add_to(m)
-                st_folium(m, width=700, height=500)
+            m = folium.Map([lat, lng], zoom_start=11)
+            folium.CircleMarker([lat, lng], radius=10, color="#0066ff", popup="You").add_to(m)
+            for s in top_results:
+                folium.Marker(
+                    [s['lat'], s['lng']],
+                    popup=f"{s['name']} - {s['price']:.3f} €",
+                    icon=folium.Icon(color="red"),
+                ).add_to(m)
+                folium.PolyLine([[lat, lng], [s['lat'], s['lng']]], color="#0066ff", weight=4).add_to(m)
+            st_folium(m, width=700, height=500)
     else:
         st.info("Perform a search to see results.")
-
-def geocode_zip(zip_code):
-    try:
-        url = f"https://nominatim.openstreetmap.org/search?q={zip_code},Spain&format=json&limit=1"
-        r = requests.get(url, headers={'User-Agent': 'WalletSafe'}).json()
-        return float(r[0]['lat']), float(r[0]['lon']) if r else None
-    except:
-        return None
-
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371
-    a = math.sin(math.radians(lat2-lat1)/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(math.radians(lon2-lon1)/2)**2
-    return 2 * R * math.asin(math.sqrt(a))
 
 st.caption(t['last_updated'].format(time=last_update))
