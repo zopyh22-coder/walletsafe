@@ -37,6 +37,10 @@ translations = {
         'stations_found': 'Найдено {count} заправок – топ 5',
         'drive': 'Проложить маршрут',
         'last_updated': 'Обновлено: {time}',
+        'adjust_radius': 'Отрегулируйте радиус для обновления результатов',
+        'invalid_zip': 'Недействительный индекс.',
+        'enter_zip': 'Введите индекс.',
+        'search_prompt': 'Выполните поиск, чтобы увидеть результаты.',
         'search_tab': 'Поиск',
         'results_tab': 'Результаты',
     },
@@ -55,6 +59,10 @@ translations = {
         'stations_found': 'Found {count} stations – top 5',
         'drive': 'Drive',
         'last_updated': 'Updated: {time}',
+        'adjust_radius': 'Adjust the radius to refresh results',
+        'invalid_zip': 'Invalid ZIP.',
+        'enter_zip': 'Enter ZIP.',
+        'search_prompt': 'Perform a search to see results.',
         'search_tab': 'Search',
         'results_tab': 'Results',
     },
@@ -73,6 +81,10 @@ translations = {
         'stations_found': 'Encontradas {count} estaciones – top 5',
         'drive': 'Navegar',
         'last_updated': 'Actualizado: {time}',
+        'adjust_radius': 'Ajusta el radio para refrescar los resultados',
+        'invalid_zip': 'Código postal inválido.',
+        'enter_zip': 'Introduce el código postal.',
+        'search_prompt': 'Realiza una búsqueda para ver resultados.',
         'search_tab': 'Buscar',
         'results_tab': 'Resultados',
     }
@@ -192,7 +204,10 @@ tab1, tab2 = st.tabs([t['search_tab'], t['results_tab']])
 with tab1:
     fuel = st.selectbox(t['fuel_label'], ["gas95", "diesel"], format_func=lambda x: t[x])
     zip_input = st.text_input(t['zip_label'], placeholder=t['zip_placeholder'])
-    st.markdown('<div class="search-icon" onclick="parent.document.querySelector(\'[data-testid="stButton"][label="Search"]\').click();">🔍</div>', unsafe_allow_html=True)
+    st.markdown(
+        "<div class=\"search-icon\" onclick=\"const btn=document.querySelector('[data-testid=\\\"stButton\\\"] button');btn?.click();\">🔍</div>",
+        unsafe_allow_html=True,
+    )
 
     if st.button(t['search_button']):
         if zip_input:
@@ -204,9 +219,9 @@ with tab1:
                 st.session_state['searched'] = True
                 st.experimental_rerun()
             else:
-                st.error("Invalid ZIP.")
+                st.error(t['invalid_zip'])
         else:
-            st.error("Enter ZIP.")
+            st.error(t['enter_zip'])
 
     if st.button(t['location_button']):
         components.html("""
@@ -231,7 +246,10 @@ with tab1:
 with tab2:
     if 'searched' in st.session_state and st.session_state['searched']:
         # Radius slider appears here after search
-        st.markdown("<p style='text-align:center; font-weight:600;'>Adjust radius to update results</p>", unsafe_allow_html=True)
+        st.markdown(
+            f"<p style='text-align:center; font-weight:600;'>{t['adjust_radius']}</p>",
+            unsafe_allow_html=True,
+        )
         radius = st.slider("", 0, 100, st.session_state['radius'], label_visibility="collapsed")
         
         if radius != st.session_state['radius']:
@@ -282,6 +300,6 @@ with tab2:
                 folium.PolyLine([[lat, lng], [s['lat'], s['lng']]], color="#0066ff", weight=4).add_to(m)
             st_folium(m, width=700, height=500)
     else:
-        st.info("Perform a search to see results.")
+        st.info(t['search_prompt'])
 
 st.caption(t['last_updated'].format(time=last_update))
