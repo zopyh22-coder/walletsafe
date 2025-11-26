@@ -1,6 +1,6 @@
 streamlit
-gspread
 pandas
 openpyxl
 folium
 streamlit-folium
+requests
