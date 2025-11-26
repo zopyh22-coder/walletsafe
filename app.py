@@ -1,5 +1,5 @@
-# app.py – WalletSafe (Python + Flask version)
-# Double-click or run: python3 app.py
+# app.py — WalletSafe Minimal White Edition
+# Run: python3 app.py
 
 from flask import Flask, render_template_string, request, jsonify
 import math
@@ -7,117 +7,151 @@ import requests
 
 app = Flask(__name__)
 
-# ——— ALL STATIONS (filtered, 0.000 removed) ———
+# === ALL STATIONS (0.000 prices removed) ===
 stations = [
-    {"name": "Nº 10.935", "city": "Abengibre", "gas95": 1.399, "diesel": 1.419, "hours": "07:00–22:00", "lat": 39.211417, "lng": -1.539167},
     {"name": "PLENERGY", "city": "Albacete", "gas95": 1.379, "diesel": 1.337, "hours": "24/7", "lat": 39.000861, "lng": -1.849833},
     {"name": "A&A", "city": "Albacete", "gas95": 1.347, "diesel": 1.297, "hours": "09:00–21:30", "lat": 39.006889, "lng": -1.885361},
-    {"name": "FAMILY ENERGY", "city": "Albacete", "gas95": 1.359, "diesel": 1.319, "hours": "07:00–23:00", "lat": 38.988972, "lng": -1.847361},
-    {"name": "ALCAMPO", "city": "Albacete", "gas95": 1.339, "diesel": 1.330, "hours": "24/7", "lat": 39.009639, "lng": -1.878111},
     {"name": "GMOIL", "city": "Albacete", "gas95": 1.335, "diesel": 1.295, "hours": "24/7", "lat": 39.022139, "lng": -1.882056},
+    {"name": "ALCAMPO", "city": "Albacete", "gas95": 1.339, "diesel": 1.330, "hours": "24/7", "lat": 39.009639, "lng": -1.878111},
+    {"name": "F-bound ENERGY", "city": "Albacete", "gas95": 1.359, "diesel": 1.319, "hours": "07:00–23:00", "lat": 38.988972, "lng": -1.847361},
     {"name": "BALLENOIL", "city": "Almansa", "gas95": 1.379, "diesel": 1.349, "hours": "24/7", "lat": 38.871556, "lng": -1.108000},
-    {"name": "PLENERGY", "city": "Almansa", "gas95": 1.379, "diesel": 1.349, "hours": "24/7", "lat": 38.878667, "lng": -1.100028},
-    {"name": "VIRGEN DE LAS NIEVES", "city": "Cenizate", "gas95": 1.372, "diesel": 1.379, "hours": "24/7", "lat": 39.301000, "lng": -1.664167},
     {"name": "LA REMEDIADORA", "city": "La Roda", "gas95": 1.329, "diesel": 1.319, "hours": "24/7", "lat": 39.201139, "lng": -2.147750},
-    # ... (more stations — you can keep adding the rest here)
+    # Add more stations here if you want — the more the better!
 ]
 
-# Simple haversine distance
-def distance(lat1, lon1, lat2, lon2):
+def haversine(lat1, lon1, lat2, lon2):
     R = 6371
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    a = math.sin(math.radians(lat2-lat1)/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(math.radians(lon2-lon1)/2)**2
+    return 2 * R * math.asin(math.sqrt(a))
 
-# Geocode ZIP (free)
 def geocode_zip(zip_code):
     try:
         url = f"https://nominatim.openstreetmap.org/search?q={zip_code},Spain&format=json&limit=1"
-        r = requests.get(url, headers={'User-Agent': 'WalletSafe/1.0'}, timeout=5)
+        r = requests.get(url, headers={'User-Agent': 'WalletSafe'}, timeout=5)
         data = r.json()
-        if data:
-            return float(data[0]['lat']), float(data[0]['lon'])
-    except:
-        pass
+        if data: return float(data[0]['lat']), float(data[0]['lon'])
+    except: pass
     return None
 
 HTML = '''
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WalletSafe – Дешёвый бензин рядом</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WalletSafe</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <style>
-        body{font-family:Arial;margin:0;background:#f0f8ff;color:#333}
-        header{background:#1976D2;color:white;padding:1rem;text-align:center}
-        .logo{font-size:1.8rem;font-weight:bold}
-        .container{max-width:1100px;margin:auto;padding:1rem}
-        .form{background:white;padding:1rem;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);margin-bottom:1rem;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-        select,input,button{padding:10px;border-radius:4px;border:1px solid #ccc}
-        button{background:#1976D2;color:white;border:none;cursor:pointer}
-        button:hover{background:#1565c0}
-        .results{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
-        .card{background:white;padding:1rem;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1)}
-        .price{font-size:1.4rem;font-weight:bold;color:#2E7D32}
-        .save{color:#4CAF50;font-weight:bold}
-        #map{height:400px;margin:2rem 0;border-radius:8px;display:none}
+        body,html{margin:0;padding:0;background:#fff;font-family:system-ui,sans-serif;color:#000}
+        header{padding:20px;text-align:center;font-size:24px;font-weight:300;border-bottom:1px solid #eee}
+        .container{max-width:1000px;margin:0 auto;padding:20px}
+        .controls{background:#fafafa;padding:15px;border-radius:12px;margin-bottom:20px;text-align:center}
+        select, button{margin:5px;padding:12px 16px;border:1px solid #ddd;border-radius:8px;font-size:16px}
+        button{background:#000;color:#fff;border:none;cursor:pointer}
+        button:active{background:#333}
+        .slider{width:80%;max-width:400px;height:8px;border-radius:5px;background:#ddd;outline:none;margin:20px auto;display:block}
+        .results{margin:30px 0}
+        .station{padding:16px;background:#fff;border:1px solid #eee;border-radius:12px;margin-bottom:12px;cursor:pointer;transition:0.2s}
+        .station:hover{box-shadow:0 4px 20px rgba(0,0,0,0.05)}
+        .name{font-size:18px;font-weight:600}
+        .price{font-size:22px;font-weight:bold;margin:8px 0}
+        .info{font-size:14px;color:#555}
+        #map{height:500px;border-radius:16px;margin-top:40px;box-shadow:0 4px 30px rgba(0,0,0,0.1)}
     </style>
 </head>
 <body>
-<header><div class="logo">WalletSafe</div></header>
+<header>WalletSafe</header>
 <div class="container">
-    <div class="form">
-        <select id="fuel"><option value="gas95">Бензин 95</option><option value="diesel">Дизель</option></select>
-        <input type="text" id="zip" placeholder="Почтовый индекс (например 02001)">
-        <button onclick="geo()">Моя геолокация</button>
-        <input type="range" id="dist" min="5" max="100" value="30" oninput="d.value=value"><output id="d">30</output> км
-        <button onclick="search()">Поиск</button>
+    <div class="controls">
+        <select id="fuel">
+            <option value="gas95">Бензин 95</option>
+            <option value="diesel">Дизель</option>
+        </select>
+        <input type="text" id="zip" placeholder="Почтовый индекс (например 02001)" style="width:200px;padding:12px;border:1px solid #ddd;border-radius:8px">
+        <button onclick="useGeo()">Моя геолокация</button><br>
+        <input type="range" class="slider" id="radius" min="5" max="100" value="30" oninput="val.textContent=this.value">
+        <span style="font-size:18px"> <span id="val">30</span> км</span>
+        <br><button onclick="search()" style="margin-top:15px;padding:14px 30px;font-size:18px">Найти самые дешёвые</button>
     </div>
-    <div id="results"></div>
+
+    <div id="results" class="results"></div>
     <div id="map"></div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-let map, marker;
-async function search(){
-    const fuel=document.getElementById('fuel').value;
-    const zip=document.getElementById('zip').value.trim();
-    const maxDist=parseInt(document.getElementById('dist').value);
+let map, userMarker, routeLayer, userPos = null;
+
+async function search() {
+    const fuel = document.getElementById('fuel').value;
+    const zip = document.getElementById('zip').value.trim();
+    const radius = parseInt(document.getElementById('radius').value);
     let lat, lng;
-    if(zip){const resp=await fetch(`/zip/${zip}`);const data=await resp.json();if(!data.error){lat=data.lat;lng=data.lng;}}
-    else if(navigator.geolocation){
-        const pos=await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej));
-        lat=pos.coords.latitude; lng=pos.coords.longitude;
-    }else{alert("Введите ZIP или разрешите геолокацию");return;}
-    const resp=await fetch(`/search?fuel=${fuel}&lat=${lat}&lng=${lng}&dist=${maxDist}`);
-    const stations=await resp.json();
-    const r=document.getElementById('results');
-    r.innerHTML='';
-    if(stations.length===0){r.innerHTML='<p>Ничего не найдено в этом радиусе</p>';return;}
-    stations.forEach(s=>{
-        const div=document.createElement('div');div.className='card';
-        div.innerHTML=`<h3>${s.name} (${s.city})</h3>
-            <p class="price">${s.price} €/л</p>
-            <p>${s.dist.toFixed(1)} км • Экономия ${(s.avg-s.price).toFixed(3)} €/л</p>
-            <p>${s.hours}</p>
-            <button onclick="showMap(${s.lat},${s.lng},'${s.name}')">Показать на карте</button>`;
-        r.appendChild(div);
+
+    if (zip) {
+        const r = await fetch(`/zip/${zip}`);
+        const d = await r.json();
+        if (d.error) return alert("Неверный индекс");
+        lat = d.lat; lng = d.lng;
+    } else if (navigator.geolocation) {
+        const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej));
+        lat = pos.coords.latitude; lng = pos.coords.longitude;
+    } else return alert("Введите индекс или разрешите геолокацию");
+
+    userPos = {lat, lng};
+    const resp = await fetch(`/search?fuel=${fuel}&lat=${lat}&lng=${lng}&dist=${radius}`);
+    const list = await resp.json();
+
+    const results = document.getElementById('results');
+    results.innerHTML = list.length === 0 ? "<p style='text-align:center;color:#777'>Ничего не найдено в этом радиусе</p>" : "";
+
+    initMap(lat, lng);
+    if (userMarker) userMarker.setLatLng([lat, lng]);
+    else userMarker = L.circleMarker([lat, lng], {radius: 8, color: '#0066ff', fillOpacity: 1}).addTo(map).bindPopup("Вы здесь").openPopup();
+
+    list.slice(0, 5).forEach((s, i) => {
+        const div = document.createElement('div');
+        div.className = 'station';
+        div.innerHTML = `
+            <div class="name">${s.name} • ${s.city}</div>
+            <div class="price">${s.price.toFixed(3)} €</div>
+            <div class="info">${s.dist.toFixed(1)} км • ${s.hours}</div>
+            <button onclick="goTo(${s.lat},${s.lng})" style="margin-top:10px">Навести в Google Maps</button>
+        `;
+        div.onclick = () => focusStation(s.lat, s.lng, s.name, s.price);
+        results.appendChild(div);
     });
 }
-function showMap(lat,lng,name){
-    const m=document.getElementById('map');
-    m.style.display='block';
-    if(map)map.remove();
-    map=L.map('map').setView([lat,lng],13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    L.marker([lat,lng]).addTo(map).bindPopup(name).openPopup();
+
+function initMap(lat, lng) {
+    if (map) map.remove();
+    map = L.map('map').setView([lat, lng], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+    document.getElementById('map').style.display = 'block';
+    if (!routeLayer) routeLayer = L.layerGroup().addTo(map);
 }
-function geo(){
-    document.getElementById('zip').value='';
+
+function focusStation(lat, lng, name, price) {
+    map.setView([lat, lng], 15);
+    if (routeLayer) routeLayer.clearLayers();
+    L.marker([lat, lng], {icon: L.divIcon({className: 'custom-marker', html: '●', iconSize: [20,20]})})
+        .addTo(map)
+        .bindPopup(`<b>${name}</b><br>${price.toFixed(3)} €`).openPopup();
+
+    if (userPos) {
+        L.polyline([[userPos.lat, userPos.lng], [lat, lng]], {color: '#0066ff', weight: 4, opacity: 0.7}).addTo(routeLayer);
+    }
+}
+
+function goTo(lat, lng) {
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+    window.open(url, '_blank');
+}
+
+function useGeo() {
+    document.getElementById('zip').value = '';
     search();
 }
 </script>
@@ -126,32 +160,33 @@ function geo(){
 '''
 
 @app.route('/')
-def index():
+def home():
     return render_template_string(HTML)
 
 @app.route('/zip/<zip_code>')
 def zip_route(zip_code):
     coords = geocode_zip(zip_code)
-    if coords:
-        return jsonify(lat=coords[0], lng=coords[1])
-    return jsonify(error="Invalid ZIP"), 400
+    return jsonify(lat=coords[0], lng=coords[1]) if coords else jsonify(error=True)
 
 @app.route('/search')
 def search():
     fuel = request.args.get('fuel')
-    lat = float(request.args.get('lat'))
-    lng = float(request.args.get('lng'))
+    lat, lng = float(request.args.get('lat')), float(request.args.get('lng'))
     max_dist = float(request.args.get('dist', 50))
+
     results = []
-    avg = sum(s[fuel] for s in stations if s[fuel]>0) / len([s for s in stations if s[fuel]>0])
+    prices = [s[fuel] for s in stations if s[fuel] > 0]
+    avg = sum(prices) / len(prices) if prices else 1.5
+
     for s in stations:
-        if s[fuel] == 0: continue
-        dist = distance(lat, lng, s['lat'], s['lng'])
+        if s[fuel] <= 0: continue
+        dist = haversine(lat, lng, s['lat'], s['lng'])
         if dist <= max_dist:
-            results.append({**s, 'dist': dist, 'price': s[fuel], 'avg': round(avg,3)})
+            results.append({**s, 'price': s[fuel], 'dist': dist})
+
     results.sort(key=lambda x: (x['price'], x['dist']))
-    return jsonify(results[:20])
+    return jsonify(results)
 
 if __name__ == '__main__':
-    print("WalletSafe запущен! Откройте в браузере: http://127.0.0.1:5000")
+    print("\nWalletSafe запущен → http://127.0.0.1:5000")
     app.run(debug=True)
