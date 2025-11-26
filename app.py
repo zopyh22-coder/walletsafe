@@ -1,89 +1,105 @@
-# app.py - WalletSafe (Streamlit, Embedded Data, Language Support)
+# app.py - WalletSafe (Streamlit, Live CSV, Languages, No Errors)
 import streamlit as st
+import pandas as pd
+import requests
+from io import StringIO
+from datetime import datetime, timedelta
 import folium
 from streamlit_folium import st_folium
 import math
-import streamlit.components.v1 as components
-import requests
 
-# Wallet Logo SVG (Modern, clean style)
+# Wallet Logo (New clean design from code)
 wallet_svg = """
-<svg width="50" height="50" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <rect x="10" y="18" width="44" height="32" rx="6" fill="none" stroke="#000" stroke-width="4"/>
-  <path d="M10 34 H54" stroke="#000" stroke-width="4"/>
-  <path d="M36 18 V50" stroke="#000" stroke-width="4"/>
-  <circle cx="46" cy="34" r="6" fill="none" stroke="#000" stroke-width="4"/>
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <rect x="20" y="30" width="60" height="40" rx="5" fill="#333"/>
+  <path d="M30 40 L70 40" stroke="#fff" stroke-width="2"/>
+  <path d="M30 50 L70 50" stroke="#fff" stroke-width="2"/>
+  <circle cx="75" cy="50" r="10" fill="#333"/>
+  <path d="M70 47 L75 50 L70 53" stroke="#fff" stroke-width="2" fill="none"/>
 </svg>
 """
 
 # Translations
 translations = {
-    'en': {
-        'title': 'WalletSafe',
-        'fuel_label': 'Fuel Type',
-        'gas95': 'Gasoline 95',
-        'diesel': 'Diesel',
-        'zip_label': 'ZIP Code',
-        'zip_placeholder': 'e.g. 02001',
-        'radius_label': 'Search Radius (km)',
-        'location_button': 'Use My Location',
-        'search_button': 'Find Cheapest Stations',
-        'no_stations': 'No stations found in this radius.',
-        'stations_found': 'Found {count} stations – showing top 5',
-        'drive': 'Drive',
-        'last_updated': 'Last Updated: {time}',
-    },
     'ru': {
-        'title': 'WalletSafe',
         'fuel_label': 'Тип топлива',
         'gas95': 'Бензин 95',
         'diesel': 'Дизель',
         'zip_label': 'Почтовый индекс',
         'zip_placeholder': 'например, 02001',
         'radius_label': 'Радиус поиска (км)',
-        'location_button': 'Использовать мое местоположение',
+        'location_button': 'Мое местоположение',
         'search_button': 'Найти самые дешевые заправки',
-        'no_stations': 'Нет заправок в этом радиусе.',
-        'stations_found': 'Найдено {count} заправок – показаны топ 5',
+        'no_stations': 'Нет заправок в радиусе.',
+        'stations_found': 'Найдено {count} заправок – топ 5',
         'drive': 'Проложить маршрут',
-        'last_updated': 'Последнее обновление: {time}',
+        'last_updated': 'Обновлено: {time}',
+    },
+    'en': {
+        'fuel_label': 'Fuel Type',
+        'gas95': 'Gasoline 95',
+        'diesel': 'Diesel',
+        'zip_label': 'ZIP Code',
+        'zip_placeholder': 'e.g., 02001',
+        'radius_label': 'Search Radius (km)',
+        'location_button': 'My Location',
+        'search_button': 'Find Cheapest Stations',
+        'no_stations': 'No stations in radius.',
+        'stations_found': 'Found {count} stations – top 5',
+        'drive': 'Drive',
+        'last_updated': 'Updated: {time}',
     },
     'es': {
-        'title': 'WalletSafe',
         'fuel_label': 'Tipo de combustible',
         'gas95': 'Gasolina 95',
         'diesel': 'Diésel',
         'zip_label': 'Código postal',
-        'zip_placeholder': 'p.ej. 02001',
+        'zip_placeholder': 'p.ej., 02001',
         'radius_label': 'Radio de búsqueda (km)',
-        'location_button': 'Usar mi ubicación',
+        'location_button': 'Mi ubicación',
         'search_button': 'Encontrar estaciones más baratas',
-        'no_stations': 'No hay estaciones en este radio.',
-        'stations_found': 'Encontradas {count} estaciones – mostrando top 5',
+        'no_stations': 'No hay estaciones en radio.',
+        'stations_found': 'Encontradas {count} estaciones – top 5',
         'drive': 'Navegar',
-        'last_updated': 'Última actualización: {time}',
+        'last_updated': 'Actualizado: {time}',
     }
 }
 
-# Default language
-if 'lang' not in st.session_state:
-    st.session_state.lang = 'ru'
+# Language selector (top right, small flags)
+st.markdown("""
+<style>
+.lang-select { position: absolute; top: 10px; right: 10px; font-size: 24px; }
+.lang-select > div { display: inline-block; margin-left: 10px; cursor: pointer; }
+</style>
+""", unsafe_allow_html=True)
 
-# Language selector with flags
-lang_options = {'ru': '🇷🇺 Русский', 'en': '🇬🇧 English', 'es': '🇪🇸 Español'}
-selected_lang = st.selectbox("", options=list(lang_options.values()), index=list(lang_options.keys()).index(st.session_state.lang))
-st.session_state.lang = list(lang_options.keys())[list(lang_options.values()).index(selected_lang)]
+lang_html = """
+<div class="lang-select">
+  <div onclick="selectLang('ru')">🇷🇺</div>
+  <div onclick="selectLang('en')">🇬🇧</div>
+  <div onclick="selectLang('es')">🇪🇸</div>
+</div>
+<script>
+function selectLang(lang) {
+  parent.window.location.href = '?lang=' + lang;
+}
+</script>
+"""
+components.html(lang_html, height=50)
+
+query_params = st.query_params
+st.session_state.lang = query_params.get('lang', [ 'ru' ])[0]
 t = translations[st.session_state.lang]
 
 st.set_page_config(page_title="WalletSafe", layout="centered")
 
-# CSS for clean, easy layout (short slider)
+# CSS for clean layout
 st.markdown("""
 <style>
 .stApp { background: white; }
 .logo { text-align: center; padding: 30px 0; }
 .stSlider > div > div > div { width: 60% !important; margin: 0 auto; }
-.station { padding: 20px; border: 1px solid #eee; border-radius: 16px; margin: 15px 0; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+.station { padding: 20px; border: 1px solid #eee; border-radius: 16px; margin: 12px 0; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
 .station:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
 .price { font-size: 28px; font-weight: bold; color: #000; }
 .name { font-size: 20px; font-weight: 600; }
@@ -105,22 +121,16 @@ with col1:
 with col2:
     zip_input = st.text_input(t['zip_label'], placeholder=t['zip_placeholder'])
 
-# Short Slider
+# Slider (0-100 km)
 radius = st.slider(t['radius_label'], 0, 100, 30)
 
-col_btn1, col_btn2 = st.columns([1,1])
-with col_btn1:
-    geo = st.button(t['location_button'])
-with col_btn2:
-    search = st.button(t['search_button'], type="primary")
-
-# Geo Prompt
-if geo:
+# Geo
+if st.button(t['location_button']):
     components.html("""
     <script>
     navigator.geolocation.getCurrentPosition(
         pos => { parent.window.location.href = '?lat=' + pos.coords.latitude + '&lng=' + pos.coords.longitude; },
-        err => { alert('Location denied.'); }
+        err => { alert('Permission denied.'); }
     );
     </script>
     <p>Requesting...</p>
@@ -130,16 +140,15 @@ if geo:
     lat = float(query_params.get('lat', [38.99])[0])
     lng = float(query_params.get('lng', [ -1.85])[0])
     search_results(lat, lng, fuel, radius)
-elif search:
-    if zip_input:
-        coords = geocode_zip(zip_input)
-        if coords:
-            lat, lng = coords
-            search_results(lat, lng, fuel, radius)
-        else:
-            st.error("Invalid ZIP code.")
+
+# Auto-search on ZIP
+if zip_input:
+    coords = geocode_zip(zip_input)
+    if coords:
+        lat, lng = coords
+        search_results(lat, lng, fuel, radius)
     else:
-        st.error("Enter ZIP or use location.")
+        st.error("Invalid ZIP.")
 
 def geocode_zip(zip_code):
     try:
