@@ -1,236 +1,92 @@
-# app.py - WalletSafe (Streamlit, Live CSV from Sheet, Languages, Tabs for Radius Adjustment)
-import streamlit as st
-import pandas as pd
-import requests
-from io import StringIO
-from datetime import datetime, timedelta
-import folium
-from streamlit_folium import st_folium
-import math
-import streamlit.components.v1 as components
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WalletSafe – Самые дешёвые заправки рядом</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+    <style>
+        :root { --green: #2E7D32; --blue: #1976D2; }
+        body { margin:0; font-family:Arial,sans-serif; background:#f5f5f5; color:#333; }
+        header { background:var(--blue); color:white; padding:1rem; text-align:center; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; }
+        .logo { font-weight:bold; font-size:1.6rem; display:flex; align-items:center; gap:10px; }
+        .logo svg { width:40px; height:40px; }
+        .lang { padding:8px; border-radius:4px; border:none; }
+        .container { max-width:1200px; margin:0 auto; padding:1rem; }
+        .form { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:20px; align-items:center; background:white; padding:15px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+        select, input, button { padding:10px; border-radius:4px; border:1px solid #ccc; }
+        button { background:var(--blue); color:white; cursor:pointer; border:none; }
+        button:hover { background:#1565c0; }
+        .results { display:grid; gap:15px; grid-template-columns:repeat(auto-fit, minmax(300px,1fr)); }
+        .card { background:white; padding:15px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.1); }
+        .card h3 { margin:0 0 8px; color:var(--green); }
+        .price { font-size:1.4rem; font-weight:bold; color:var(--green); }
+        .save { color:#4CAF50; font-weight:bold; }
+        .map { height:400px; margin:20px 0; border-radius:8px; display:none; }
+        .pagination { text-align:center; margin:20px 0; }
+        .drive { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+        .drive button { background:#4CAF50; font-size:0.9rem; padding:6px 10px; }
+        .hidden { display:none !important; }
+    </style>
+</head>
+<body>
 
-# Wallet Logo (New clean, modern design - black & white, inspired from simple wallet icons on similar sites like GasBuddy)
-wallet_svg = """
-<svg width="50" height="50" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <rect x="10" y="18" width="44" height="32" rx="6" fill="none" stroke="#000" stroke-width="4"/>
-  <path d="M10 34 H54" stroke="#000" stroke-width="4"/>
-  <path d="M36 18 V50" stroke="#000" stroke-width="4"/>
-  <circle cx="46" cy="34" r="6" fill="none" stroke="#000" stroke-width="4"/>
-</svg>
-"""
+<header>
+    <div class="logo">
+        <svg viewBox="0 0 100 100">
+            <rect x="15" y="30" width="70" height="45" rx="10" fill="var(--green)"/>
+            <circle cx="70" cy="45" r="12" fill="var(--blue)"/>
+            <path d="M65 40 L75 45 L65 50 Z" fill="white"/>
+        </svg>
+        WalletSafe
+    </div>
+    <select class="lang" onchange="changeLang(this.value)">
+        <option value="ru">Русский</option>
+        <option value="en">English</option>
+        <option value="es">Español</option>
+    </select>
+</header>
 
-# Translations
-translations = {
-    'ru': {
-        'title': 'WalletSafe',
-        'fuel_label': 'Тип топлива',
-        'gas95': 'Бензин 95',
-        'diesel': 'Дизель',
-        'zip_label': 'Почтовый индекс',
-        'zip_placeholder': 'например, 02001',
-        'radius_label': 'Радиус поиска (км)',
-        'location_button': 'Мое местоположение',
-        'search_button': 'Найти самые дешевые заправки',
-        'apply_radius': 'Применить радиус',
-        'no_stations': 'Нет заправок в радиусе.',
-        'stations_found': 'Найдено {count} заправок – топ 5',
-        'drive': 'Проложить маршрут',
-        'last_updated': 'Обновлено: {time}',
-        'search_tab': 'Поиск',
-        'results_tab': 'Результаты',
-    },
-    'en': {
-        'title': 'WalletSafe',
-        'fuel_label': 'Fuel Type',
-        'gas95': 'Gasoline 95',
-        'diesel': 'Diesel',
-        'zip_label': 'ZIP Code',
-        'zip_placeholder': 'e.g., 02001',
-        'radius_label': 'Search Radius (km)',
-        'location_button': 'My Location',
-        'search_button': 'Find Cheapest Stations',
-        'apply_radius': 'Apply Radius',
-        'no_stations': 'No stations in radius.',
-        'stations_found': 'Found {count} stations – top 5',
-        'drive': 'Drive',
-        'last_updated': 'Updated: {time}',
-        'search_tab': 'Search',
-        'results_tab': 'Results',
-    },
-    'es': {
-        'title': 'WalletSafe',
-        'fuel_label': 'Tipo de combustible',
-        'gas95': 'Gasolina 95',
-        'diesel': 'Diésel',
-        'zip_label': 'Código postal',
-        'zip_placeholder': 'p.ej., 02001',
-        'radius_label': 'Radio de búsqueda (km)',
-        'location_button': 'Mi ubicación',
-        'search_button': 'Encontrar estaciones más baratas',
-        'apply_radius': 'Aplicar radio',
-        'no_stations': 'No hay estaciones en radio.',
-        'stations_found': 'Encontradas {count} estaciones – top 5',
-        'drive': 'Navegar',
-        'last_updated': 'Actualizado: {time}',
-        'search_tab': 'Buscar',
-        'results_tab': 'Resultados',
-    }
-}
+<div class="container">
+    <div class="form">
+        <select id="fuel"><option value="gas95">Бензин 95</option><option value="diesel">Дизель</option></select>
+        <input type="text" id="zip" placeholder="Почтовый индекс (например 28001)">
+        <button onclick="useGeo()">Моё местоположение</button>
+        <span>Радиус:</span>
+        <input type="range" id="range" min="5" max="100" value="30" oninput="this.nextElementSibling.value=this.value">
+        <output>30</output> км
+        <button onclick="search()">Поиск</button>
+    </div>
 
-# Language selector (top right, small flags, not huge)
-st.markdown("""
-<style>
-.lang-select { position: absolute; top: 10px; right: 10px; font-size: 18px; }
-.lang-select > div { display: inline-block; margin-left: 5px; cursor: pointer; }
-</style>
-""", unsafe_allow_html=True)
-
-lang_html = """
-<div class="lang-select">
-  <div onclick="selectLang('ru')">🇷🇺</div>
-  <div onclick="selectLang('en')">🇬🇧</div>
-  <div onclick="selectLang('es')">🇪🇸</div>
+    <div id="results" class="results hidden"></div>
+    <div id="map" class="map"></div>
+    <div class="pagination hidden">
+        <button onclick="page(-1)">Пред.</button>
+        <span id="pg"></span>
+        <button onclick="page(1)">След.</button>
+    </div>
 </div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-function selectLang(lang) {
-  parent.window.location.href = '?lang=' + lang;
-}
-</script>
-"""
-components.html(lang_html, height=40)
+// ——— Translations ———
+const t = {
+    ru: {title:"Самые дешёвые заправки рядом", fuelGas:"Бензин 95", fuelDiesel:"Дизель", placeholder:"Почтовый индекс (например 28001)", geo:"Моё местоположение", radius:"Радиус", search:"Поиск", price:"Цена", dist:"Расстояние", save:"Экономия", hours:"Часы работы", drive:"Проложить маршрут", no:"Ничего не найдено", page:"Страница"},
+    en: {title:"Cheapest fuel nearby", fuelGas:"Gasoline 95", fuelDiesel:"Diesel", placeholder:"ZIP code (e.g. 28001)", geo:"My location", radius:"Radius", search:"Search", price:"Price", dist:"Distance", save:"You save", hours:"Hours", drive:"Get directions", no:"No stations found", page:"Page"},
+    es: {title:"Gasolineras más baratas cerca", fuelGas:"Gasolina 95", fuelDiesel:"Diésel", placeholder:"Código postal (ej. 28001)", geo:"Mi ubicación", radius:"Radio", search:"Buscar", price:"Precio", dist:"Distancia", save:"Ahorras", hours:"Horario", drive:"Cómo llegar", no:"No hay estaciones", page:"Página"}
+};
+let lang = 'ru';
 
-query_params = st.query_params
-st.session_state.lang = query_params.get('lang', ['ru'])[0]
-t = translations[st.session_state.lang]
-
-st.set_page_config(page_title="WalletSafe", layout="centered")
-
-# CSS for clean, easy layout (short slider, inspired from GasBuddy simple design)
-st.markdown("""
-<style>
-.stApp { background: white; }
-.logo { text-align: center; padding: 30px 0; }
-.stSlider > div > div > div { width: 60% !important; margin: 0 auto; }
-.station { padding: 20px; border: 1px solid #eee; border-radius: 16px; margin: 12px 0; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-.station:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
-.price { font-size: 28px; font-weight: bold; color: #000; }
-.name { font-size: 20px; font-weight: 600; }
-.stTextInput > div > div { position: relative; }
-.search-icon { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); cursor: pointer; font-size: 20px; color: #333; }
-</style>
-""", unsafe_allow_html=True)
-
-# Header
-st.markdown(f"""
-<div class="logo">
-    {wallet_svg}
-    <h1 style="display: inline; margin-left: 15px; font-size: 42px; font-weight: 700;">WalletSafe</h1>
-</div>
-""", unsafe_allow_html=True)
-
-# Tabs for Search and Results (sophisticated flow)
-tab1, tab2 = st.tabs([t['search_tab'], t['results_tab']])
-
-with tab1:
-    fuel = st.selectbox(t['fuel_label'], ["gas95", "diesel"], format_func=lambda x: t[x])
-    zip_input = st.text_input(t['zip_label'], placeholder=t['zip_placeholder'])
-    st.markdown('<div class="search-icon" onclick="parent.document.querySelector(\'[data-testid="stButton"][label="Search"]\').click();">🔍</div>', unsafe_allow_html=True)
-
-    if st.button(t['search_button']):
-        if zip_input:
-            coords = geocode_zip(zip_input)
-            if coords:
-                st.session_state['lat'], st.session_state['lng'] = coords
-                st.session_state['fuel'] = fuel
-                st.session_state['radius'] = radius
-                st.session_state['searched'] = True
-                st.experimental_rerun()
-            else:
-                st.error("Invalid ZIP.")
-        else:
-            st.error("Enter ZIP.")
-
-    if st.button(t['location_button']):
-        components.html("""
-        <script>
-        navigator.geolocation.getCurrentPosition(
-            pos => { parent.window.location.href = '?lat=' + pos.coords.latitude + '&lng=' + pos.coords.longitude; },
-            err => { alert('Permission denied.'); }
-        );
-        </script>
-        <p>Requesting...</p>
-        """, height=50)
-
-        query_params = st.query_params
-        lat = float(query_params.get('lat', [38.99])[0])
-        lng = float(query_params.get('lng', [ -1.85])[0])
-        st.session_state['lat'], st.session_state['lng'] = lat, lng
-        st.session_state['fuel'] = fuel
-        st.session_state['radius'] = radius
-        st.session_state['searched'] = True
-        st.experimental_rerun()
-
-with tab2:
-    if 'searched' in st.session_state and st.session_state['searched']:
-        # Radius slider only in results tab
-        radius = st.slider(t['radius_label'], 0, 100, st.session_state['radius'])
-        
-        if st.button(t['apply_radius']):
-            st.session_state['radius'] = radius
-            st.experimental_rerun()
-
-        lat = st.session_state['lat']
-        lng = st.session_state['lng']
-        fuel = st.session_state['fuel']
-        radius = st.session_state['radius']
-        
-        results = []
-        for s in stations:
-            dist = haversine(lat, lng, s['lat'], s['lng'])
-            if dist <= radius:
-                results.append({**s, 'price': s[fuel], 'dist': dist})
-
-        results.sort(key=lambda x: (x['price'], x['dist']))
-
-        if not results:
-            st.info(t['no_stations'])
-        else:
-            st.success(t['stations_found'].format(count=len(results)))
-
-            for s in results[:5]:
-                col_a, col_b = st.columns([4,1])
-                with col_a:
-                    st.markdown(f"""
-                        <div class="station">
-                            <div class="name">{s['name']} • {s['city']}</div>
-                            <div class="price">{s['price']:.3f} €</div>
-                            <div style="color:#555;">{s['dist']:.1f} km • {s['hours']}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                with col_b:
-                    st.markdown(f"[ {t['drive']} ](https://www.google.com/maps/dir/?api=1&destination={s['lat']},{s['lng']})")
-
-            # Map
-            m = folium.Map([lat, lng], zoom_start=11)
-            folium.CircleMarker([lat, lng], radius=10, color="#0066ff", popup="You").add_to(m)
-            for s in results[:5]:
-                folium.Marker([s['lat'], s['lng']], popup=f"{s['name']} - {s['price']:.3f} €", icon=folium.Icon(color="red")).add_to(m)
-                folium.PolyLine([[lat,lng],[s['lat'],s['lng']]], color="#0066ff", weight=4).add_to(m)
-            st_folium(m, width=700, height=500)
-    else:
-        st.info("Perform a search to see results.")
-
-def geocode_zip(zip_code):
-    try:
-        url = f"https://nominatim.openstreetmap.org/search?q={zip_code},Spain&format=json&limit=1"
-        r = requests.get(url, headers={'User-Agent': 'WalletSafe'}).json()
-        return float(r[0]['lat']), float(r[0]['lon']) if r else None
-    except:
-        return None
-
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371
-    a = math.sin(math.radians(lat2-lat1)/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(math.radians(lon2-lon1)/2)**2
-    return 2 * R * math.asin(math.sqrt(a))
-
-st.caption(t['last_updated'].format(time=last_update))
+// ——— Full filtered data (0.000 prices removed) ———
+const stations = [
+    {name:"Nº 10.935",city:"Abengibre",prov:"ALBACETE",gas95:1.399,diesel:1.419,hours:"07:00–22:00",lat:39.211417,lng:-1.539167},
+    {name:"PLENERGY",city:"Albacete",prov:"ALBACETE",gas95:1.379,diesel:1.337,hours:"24/7",lat:39.000861,lng:-1.849833},
+    {name:"A&A",city:"Albacete",prov:"ALBACETE",gas95:1.347,diesel:1.297,hours:"09:00–21:30",lat:39.006889,lng:-1.885361},
+    {name:"FAMILY ENERGY",city:"Albacete",prov:"ALBACETE",gas95:1.359,diesel:1.319,hours:"07:00–23:00",lat:38.988972,lng:-1.847361},
+    {name:"ALCAMPO",city:"Albacete",prov:"ALBACETE",gas95:1.339,diesel:1.330,hours:"24/7",lat:39.009639,lng:-1.878111},
+    {name:"GMOIL",city:"Albacete",prov:"ALBACETE",gas95:1.335,diesel:1.295,hours:"24/7",lat:39.022139,lng:-1.882056},
+    {name:"BALLENOIL",city:"Almansa",prov:"ALBACETE",gas95:1.379,diesel:1.349,hours:"24/7",lat:38.871556,lng:-1.108000},
+    {name:"PLENERGY",city:"Almansa",prov:"ALBACETE",gas95:1.379,diesel:1.349,hours:"24/7",lat:38.878667,lng:-1.100028},
+    {name:"VIRGEN DE LAS NIEVES",city:"Cenizate",prov:"ALBACETE",gas95:1.372,diesel:1.379,hours:"24/7",lat:39.301000,lng:-1.664167},
+    {name:"LA REMEDIADORA",city:"Roda (La)",prov:"ALBACETE",gas95:1.329,diesel:1.319,hours:"24/7",lat:39
