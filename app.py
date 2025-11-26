@@ -1,14 +1,12 @@
-# app.py - WalletSafe (Streamlit, Live CSV, No Errors)
+# app.py - WalletSafe (Streamlit, Embedded Data, Language Support)
 import streamlit as st
-import pandas as pd
-import requests
-from io import StringIO
 import folium
 from streamlit_folium import st_folium
 import math
 import streamlit.components.v1 as components
+import requests
 
-# New Wallet Logo (Inspired by modern e-wallet icon – clean black & white line style)
+# Wallet Logo SVG (Modern, clean style)
 wallet_svg = """
 <svg width="50" height="50" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
   <rect x="10" y="18" width="44" height="32" rx="6" fill="none" stroke="#000" stroke-width="4"/>
@@ -18,90 +16,106 @@ wallet_svg = """
 </svg>
 """
 
-@st.cache_data(ttl=3600)
-def load_data():
-    try:
-        csv_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRLv_PUqHNCedwZhQIU5YtgH78T3uGxpd3v6CY2k368WP4gxDPFELdoplO5-ujpzSz53dJVkZ2dQbeZ/pub?gid=0&single=true&output=csv"
-        r = requests.get(csv_url)
-        r.raise_for_status()
-        df = pd.read_csv(StringIO(r.text))
-        
-        df.columns = df.columns.str.strip()
-        df = df.rename(columns={
-            'Название заправки': 'name',
-            'Город': 'city',
-            'Бензин 95': 'gas95',
-            'Дизель': 'diesel',
-            'Рабочее время': 'hours',
-            'Lat (Широта)': 'lat',
-            'Long (Долгота)': 'lng',
-            'Oбновлено в': 'updated_raw'
-        })
-        
-        df['gas95'] = pd.to_numeric(df['gas95'].str.replace(' €', '').str.replace(',', '.'), errors='coerce')
-        df['diesel'] = pd.to_numeric(df['diesel'].str.replace(' €', '').str.replace(',', '.'), errors='coerce')
-        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-        df['lng'] = pd.to_numeric(df['lng'], errors='coerce')
-        
-        df = df[(df['gas95'] > 0) & (df['diesel'] > 0) & df['lat'].notna() & df['lng'].notna()]
-        
-        def serial_to_date(x):
-            if pd.isna(x): return 'N/A'
-            try:
-                return (datetime(1899, 12, 30) + timedelta(days=float(x))).strftime('%d.%m.%Y %H:%M')
-            except:
-                return 'N/A'
-        df['updated'] = df['updated_raw'].apply(serial_to_date)
-        
-        return df[['name', 'city', 'gas95', 'diesel', 'hours', 'lat', 'lng', 'updated']].to_dict('records'), df['updated'].iloc[0] if not df.empty else 'N/A'
-    except Exception as e:
-        st.error(f"Data load error. Refresh or check sheet.")
-        return [], 'N/A'
+# Translations
+translations = {
+    'en': {
+        'title': 'WalletSafe',
+        'fuel_label': 'Fuel Type',
+        'gas95': 'Gasoline 95',
+        'diesel': 'Diesel',
+        'zip_label': 'ZIP Code',
+        'zip_placeholder': 'e.g. 02001',
+        'radius_label': 'Search Radius (km)',
+        'location_button': 'Use My Location',
+        'search_button': 'Find Cheapest Stations',
+        'no_stations': 'No stations found in this radius.',
+        'stations_found': 'Found {count} stations – showing top 5',
+        'drive': 'Drive',
+        'last_updated': 'Last Updated: {time}',
+    },
+    'ru': {
+        'title': 'WalletSafe',
+        'fuel_label': 'Тип топлива',
+        'gas95': 'Бензин 95',
+        'diesel': 'Дизель',
+        'zip_label': 'Почтовый индекс',
+        'zip_placeholder': 'например, 02001',
+        'radius_label': 'Радиус поиска (км)',
+        'location_button': 'Использовать мое местоположение',
+        'search_button': 'Найти самые дешевые заправки',
+        'no_stations': 'Нет заправок в этом радиусе.',
+        'stations_found': 'Найдено {count} заправок – показаны топ 5',
+        'drive': 'Проложить маршрут',
+        'last_updated': 'Последнее обновление: {time}',
+    },
+    'es': {
+        'title': 'WalletSafe',
+        'fuel_label': 'Tipo de combustible',
+        'gas95': 'Gasolina 95',
+        'diesel': 'Diésel',
+        'zip_label': 'Código postal',
+        'zip_placeholder': 'p.ej. 02001',
+        'radius_label': 'Radio de búsqueda (km)',
+        'location_button': 'Usar mi ubicación',
+        'search_button': 'Encontrar estaciones más baratas',
+        'no_stations': 'No hay estaciones en este radio.',
+        'stations_found': 'Encontradas {count} estaciones – mostrando top 5',
+        'drive': 'Navegar',
+        'last_updated': 'Última actualización: {time}',
+    }
+}
 
-stations, last_update = load_data()
+# Default language
+if 'lang' not in st.session_state:
+    st.session_state.lang = 'ru'
+
+# Language selector with flags
+lang_options = {'ru': '🇷🇺 Русский', 'en': '🇬🇧 English', 'es': '🇪🇸 Español'}
+selected_lang = st.selectbox("", options=list(lang_options.values()), index=list(lang_options.keys()).index(st.session_state.lang))
+st.session_state.lang = list(lang_options.keys())[list(lang_options.values()).index(selected_lang)]
+t = translations[st.session_state.lang]
 
 st.set_page_config(page_title="WalletSafe", layout="centered")
 
-# CSS for clean layout (short slider, no code leaks)
+# CSS for clean, easy layout (short slider)
 st.markdown("""
 <style>
-    .stApp { background: white; }
-    .css-1d391kg { padding-top: 1rem; }
-    .stSlider > div > div > div > div { width: 400px !important; margin: 0 auto; }
-    .station { background: white; padding: 20px; border: 1px solid #eee; border-radius: 16px; margin: 12px 0; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-    .price { font-size: 28px; font-weight: bold; color: #000; }
-    .name { font-size: 20px; font-weight: 600; }
-    .stTextInput > div > div > input { padding-right: 40px !important; }
-    .search-icon { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); cursor: pointer; }
+.stApp { background: white; }
+.logo { text-align: center; padding: 30px 0; }
+.stSlider > div > div > div { width: 60% !important; margin: 0 auto; }
+.station { padding: 20px; border: 1px solid #eee; border-radius: 16px; margin: 15px 0; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+.station:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+.price { font-size: 28px; font-weight: bold; color: #000; }
+.name { font-size: 20px; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
 # Header
 st.markdown(f"""
-<div style="text-align:center; padding:30px 0;">
+<div class="logo">
     {wallet_svg}
-    <h1 style="display:inline; margin-left:15px; font-size:42px; font-weight:700;">WalletSafe</h1>
+    <h1 style="display: inline; margin-left: 15px; font-size: 42px; font-weight: 700;">WalletSafe</h1>
 </div>
 """, unsafe_allow_html=True)
 
-# Controls (clean, easy)
-fuel = st.selectbox("Fuel Type", ["gas95", "diesel"], format_func=lambda x: "Gasoline 95" if x == "gas95" else "Diesel")
-
-# ZIP Bar with Search Icon (auto-search on enter)
-zip_code = st.text_input("ZIP Code", placeholder="e.g. 02001", key="zip")
-
-# Search Icon (click to search)
-st.markdown("""
-<div class="search-icon" onclick="document.getElementById('zip').dispatchEvent(new KeyboardEvent('keydown', {'key': 'Enter'}));">
-    🔍
-</div>
-""", unsafe_allow_html=True)
+# Controls
+col1, col2 = st.columns([2,2])
+with col1:
+    fuel = st.selectbox(t['fuel_label'], ["gas95", "diesel"], format_func=lambda x: t[x])
+with col2:
+    zip_input = st.text_input(t['zip_label'], placeholder=t['zip_placeholder'])
 
 # Short Slider
-radius = st.slider("Search Radius (km)", 0, 100, 30)
+radius = st.slider(t['radius_label'], 0, 100, 30)
 
-# Geo Button
-if st.button("Use My Location"):
+col_btn1, col_btn2 = st.columns([1,1])
+with col_btn1:
+    geo = st.button(t['location_button'])
+with col_btn2:
+    search = st.button(t['search_button'], type="primary")
+
+# Geo Prompt
+if geo:
     components.html("""
     <script>
     navigator.geolocation.getCurrentPosition(
@@ -116,17 +130,18 @@ if st.button("Use My Location"):
     lat = float(query_params.get('lat', [38.99])[0])
     lng = float(query_params.get('lng', [ -1.85])[0])
     search_results(lat, lng, fuel, radius)
-
-# Auto-search on ZIP enter or button
-if zip_code:
-    coords = get_coords_from_zip(zip_code)
-    if coords:
-        lat, lng = coords
-        search_results(lat, lng, fuel, radius)
+elif search:
+    if zip_input:
+        coords = geocode_zip(zip_input)
+        if coords:
+            lat, lng = coords
+            search_results(lat, lng, fuel, radius)
+        else:
+            st.error("Invalid ZIP code.")
     else:
-        st.error("Invalid ZIP code.")
+        st.error("Enter ZIP or use location.")
 
-def get_coords_from_zip(zip_code):
+def geocode_zip(zip_code):
     try:
         url = f"https://nominatim.openstreetmap.org/search?q={zip_code},Spain&format=json&limit=1"
         r = requests.get(url, headers={'User-Agent': 'WalletSafe'}).json()
@@ -144,18 +159,23 @@ def search_results(lat, lng, fuel, radius):
     results.sort(key=lambda x: (x['price'], x['dist']))
 
     if not results:
-        st.info("No stations found.")
+        st.info(t['no_stations'])
         return
 
+    st.success(t['stations_found'].format(count=len(results)))
+
     for s in results[:5]:
-        st.markdown(f"""
-        <div class="station">
-            <div class="name">{s['name']} • {s['city']}</div>
-            <div class="price">{s['price']:.3f} €</div>
-            <div style="color:#555;">{s['dist']:.1f} km • {s['hours']}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown(f"[Drive](https://www.google.com/maps/dir/?api=1&destination={s['lat']},{s['lng']})")
+        col_a, col_b = st.columns([4,1])
+        with col_a:
+            st.markdown(f"""
+                <div class="station">
+                    <div class="name">{s['name']} • {s['city']}</div>
+                    <div class="price">{s['price']:.3f} €</div>
+                    <div style="color:#555;">{s['dist']:.1f} km • {s['hours']}</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with col_b:
+            st.markdown(f"[ {t['drive']} ](https://www.google.com/maps/dir/?api=1&destination={s['lat']},{s['lng']})")
 
     # Map
     m = folium.Map([lat, lng], zoom_start=11)
@@ -170,4 +190,4 @@ def haversine(lat1, lon1, lat2, lon2):
     a = math.sin(math.radians(lat2-lat1)/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(math.radians(lon2-lon1)/2)**2
     return 2 * R * math.asin(math.sqrt(a))
 
-st.caption(f"Last Updated: {last_update}")
+st.caption(t['last_updated'].format(time=last_update))
