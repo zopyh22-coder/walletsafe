@@ -1,4 +1,4 @@
-# app.py - WalletSafe (Streamlit, Live CSV, Languages, No Errors)
+# app.py - WalletSafe (Streamlit, Live CSV from Sheet, Languages, Tabs for Radius Adjustment)
 import streamlit as st
 import pandas as pd
 import requests
@@ -9,7 +9,7 @@ from streamlit_folium import st_folium
 import math
 import streamlit.components.v1 as components
 
-# Wallet Logo (Clean, modern style)
+# Wallet Logo (New clean, modern design - black & white, inspired from simple wallet icons on similar sites like GasBuddy)
 wallet_svg = """
 <svg width="50" height="50" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
   <rect x="10" y="18" width="44" height="32" rx="6" fill="none" stroke="#000" stroke-width="4"/>
@@ -18,9 +18,6 @@ wallet_svg = """
   <circle cx="46" cy="34" r="6" fill="none" stroke="#000" stroke-width="4"/>
 </svg>
 """
-
-# Last Update (define here to avoid NameError)
-last_update = '26.11.2025 20:30'
 
 # Translations
 translations = {
@@ -34,10 +31,13 @@ translations = {
         'radius_label': 'Радиус поиска (км)',
         'location_button': 'Мое местоположение',
         'search_button': 'Найти самые дешевые заправки',
+        'apply_radius': 'Применить радиус',
         'no_stations': 'Нет заправок в радиусе.',
         'stations_found': 'Найдено {count} заправок – топ 5',
         'drive': 'Проложить маршрут',
         'last_updated': 'Обновлено: {time}',
+        'search_tab': 'Поиск',
+        'results_tab': 'Результаты',
     },
     'en': {
         'title': 'WalletSafe',
@@ -49,10 +49,13 @@ translations = {
         'radius_label': 'Search Radius (km)',
         'location_button': 'My Location',
         'search_button': 'Find Cheapest Stations',
+        'apply_radius': 'Apply Radius',
         'no_stations': 'No stations in radius.',
         'stations_found': 'Found {count} stations – top 5',
         'drive': 'Drive',
         'last_updated': 'Updated: {time}',
+        'search_tab': 'Search',
+        'results_tab': 'Results',
     },
     'es': {
         'title': 'WalletSafe',
@@ -64,18 +67,21 @@ translations = {
         'radius_label': 'Radio de búsqueda (km)',
         'location_button': 'Mi ubicación',
         'search_button': 'Encontrar estaciones más baratas',
+        'apply_radius': 'Aplicar radio',
         'no_stations': 'No hay estaciones en radio.',
         'stations_found': 'Encontradas {count} estaciones – top 5',
         'drive': 'Navegar',
         'last_updated': 'Actualizado: {time}',
+        'search_tab': 'Buscar',
+        'results_tab': 'Resultados',
     }
 }
 
-# Language selector (top right, small flags)
+# Language selector (top right, small flags, not huge)
 st.markdown("""
 <style>
-.lang-select { position: absolute; top: 10px; right: 10px; font-size: 24px; }
-.lang-select > div { display: inline-block; margin-left: 10px; cursor: pointer; }
+.lang-select { position: absolute; top: 10px; right: 10px; font-size: 18px; }
+.lang-select > div { display: inline-block; margin-left: 5px; cursor: pointer; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -91,7 +97,7 @@ function selectLang(lang) {
 }
 </script>
 """
-components.html(lang_html, height=50)
+components.html(lang_html, height=40)
 
 query_params = st.query_params
 st.session_state.lang = query_params.get('lang', ['ru'])[0]
@@ -99,7 +105,7 @@ t = translations[st.session_state.lang]
 
 st.set_page_config(page_title="WalletSafe", layout="centered")
 
-# CSS for clean layout
+# CSS for clean, easy layout (short slider, inspired from GasBuddy simple design)
 st.markdown("""
 <style>
 .stApp { background: white; }
@@ -110,7 +116,7 @@ st.markdown("""
 .price { font-size: 28px; font-weight: bold; color: #000; }
 .name { font-size: 20px; font-weight: 600; }
 .stTextInput > div > div { position: relative; }
-.search-icon { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); cursor: pointer; }
+.search-icon { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); cursor: pointer; font-size: 20px; color: #333; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -122,41 +128,97 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Controls
-col1, col2 = st.columns([2,2])
-with col1:
+# Tabs for Search and Results (sophisticated flow)
+tab1, tab2 = st.tabs([t['search_tab'], t['results_tab']])
+
+with tab1:
     fuel = st.selectbox(t['fuel_label'], ["gas95", "diesel"], format_func=lambda x: t[x])
-with col2:
     zip_input = st.text_input(t['zip_label'], placeholder=t['zip_placeholder'])
+    st.markdown('<div class="search-icon" onclick="parent.document.querySelector(\'[data-testid="stButton"][label="Search"]\').click();">🔍</div>', unsafe_allow_html=True)
 
-# Slider (0-100 km)
-radius = st.slider(t['radius_label'], 0, 100, 30)
+    if st.button(t['search_button']):
+        if zip_input:
+            coords = geocode_zip(zip_input)
+            if coords:
+                st.session_state['lat'], st.session_state['lng'] = coords
+                st.session_state['fuel'] = fuel
+                st.session_state['radius'] = radius
+                st.session_state['searched'] = True
+                st.experimental_rerun()
+            else:
+                st.error("Invalid ZIP.")
+        else:
+            st.error("Enter ZIP.")
 
-# Geo Button
-if st.button(t['location_button']):
-    components.html("""
-    <script>
-    navigator.geolocation.getCurrentPosition(
-        pos => { parent.window.location.href = '?lat=' + pos.coords.latitude + '&lng=' + pos.coords.longitude; },
-        err => { alert('Permission denied.'); }
-    );
-    </script>
-    <p>Requesting...</p>
-    """, height=50)
+    if st.button(t['location_button']):
+        components.html("""
+        <script>
+        navigator.geolocation.getCurrentPosition(
+            pos => { parent.window.location.href = '?lat=' + pos.coords.latitude + '&lng=' + pos.coords.longitude; },
+            err => { alert('Permission denied.'); }
+        );
+        </script>
+        <p>Requesting...</p>
+        """, height=50)
 
-    query_params = st.query_params
-    lat = float(query_params.get('lat', [38.99])[0])
-    lng = float(query_params.get('lng', [ -1.85])[0])
-    search_results(lat, lng, fuel, radius)
+        query_params = st.query_params
+        lat = float(query_params.get('lat', [38.99])[0])
+        lng = float(query_params.get('lng', [ -1.85])[0])
+        st.session_state['lat'], st.session_state['lng'] = lat, lng
+        st.session_state['fuel'] = fuel
+        st.session_state['radius'] = radius
+        st.session_state['searched'] = True
+        st.experimental_rerun()
 
-# Auto-search on ZIP
-if zip_input:
-    coords = geocode_zip(zip_input)
-    if coords:
-        lat, lng = coords
-        search_results(lat, lng, fuel, radius)
+with tab2:
+    if 'searched' in st.session_state and st.session_state['searched']:
+        # Radius slider only in results tab
+        radius = st.slider(t['radius_label'], 0, 100, st.session_state['radius'])
+        
+        if st.button(t['apply_radius']):
+            st.session_state['radius'] = radius
+            st.experimental_rerun()
+
+        lat = st.session_state['lat']
+        lng = st.session_state['lng']
+        fuel = st.session_state['fuel']
+        radius = st.session_state['radius']
+        
+        results = []
+        for s in stations:
+            dist = haversine(lat, lng, s['lat'], s['lng'])
+            if dist <= radius:
+                results.append({**s, 'price': s[fuel], 'dist': dist})
+
+        results.sort(key=lambda x: (x['price'], x['dist']))
+
+        if not results:
+            st.info(t['no_stations'])
+        else:
+            st.success(t['stations_found'].format(count=len(results)))
+
+            for s in results[:5]:
+                col_a, col_b = st.columns([4,1])
+                with col_a:
+                    st.markdown(f"""
+                        <div class="station">
+                            <div class="name">{s['name']} • {s['city']}</div>
+                            <div class="price">{s['price']:.3f} €</div>
+                            <div style="color:#555;">{s['dist']:.1f} km • {s['hours']}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                with col_b:
+                    st.markdown(f"[ {t['drive']} ](https://www.google.com/maps/dir/?api=1&destination={s['lat']},{s['lng']})")
+
+            # Map
+            m = folium.Map([lat, lng], zoom_start=11)
+            folium.CircleMarker([lat, lng], radius=10, color="#0066ff", popup="You").add_to(m)
+            for s in results[:5]:
+                folium.Marker([s['lat'], s['lng']], popup=f"{s['name']} - {s['price']:.3f} €", icon=folium.Icon(color="red")).add_to(m)
+                folium.PolyLine([[lat,lng],[s['lat'],s['lng']]], color="#0066ff", weight=4).add_to(m)
+            st_folium(m, width=700, height=500)
     else:
-        st.error("Invalid ZIP.")
+        st.info("Perform a search to see results.")
 
 def geocode_zip(zip_code):
     try:
@@ -165,42 +227,6 @@ def geocode_zip(zip_code):
         return float(r[0]['lat']), float(r[0]['lon']) if r else None
     except:
         return None
-
-def search_results(lat, lng, fuel, radius):
-    results = []
-    for s in stations:
-        dist = haversine(lat, lng, s['lat'], s['lng'])
-        if dist <= radius:
-            results.append({**s, 'price': s[fuel], 'dist': dist})
-
-    results.sort(key=lambda x: (x['price'], x['dist']))
-
-    if not results:
-        st.info(t['no_stations'])
-        return
-
-    st.success(t['stations_found'].format(count=len(results)))
-
-    for s in results[:5]:
-        col_a, col_b = st.columns([4,1])
-        with col_a:
-            st.markdown(f"""
-                <div class="station">
-                    <div class="name">{s['name']} • {s['city']}</div>
-                    <div class="price">{s['price']:.3f} €</div>
-                    <div style="color:#555;">{s['dist']:.1f} km • {s['hours']}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with col_b:
-            st.markdown(f"[ {t['drive']} ](https://www.google.com/maps/dir/?api=1&destination={s['lat']},{s['lng']})")
-
-    # Map
-    m = folium.Map([lat, lng], zoom_start=11)
-    folium.CircleMarker([lat, lng], radius=10, color="#0066ff", popup="You").add_to(m)
-    for s in results[:5]:
-        folium.Marker([s['lat'], s['lng'], popup=f"{s['name']} - {s['price']:.3f} €", icon=folium.Icon(color="red")).add_to(m)
-        folium.PolyLine([[lat,lng],[s['lat'], s['lng']]], color="#0066ff", weight=4).add_to(m)
-    st_folium(m, width=700, height=500)
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371
